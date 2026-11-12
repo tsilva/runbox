@@ -1,0 +1,7 @@
+/.venv/
+/dist/
+/.internal/
+__pycache__/
+.pytest_cache/
+*.pyc
+/.ruff_cache/
