@@ -54,7 +54,7 @@ proxy and optional required OS sandbox enforce the child restrictions they cover
 Approvals intentionally become stale after source/runtime/configuration updates.
 Trusted review is required to refresh them. Runtime dependency directories are
 reviewed installations, not individually attested distribution contents; the
-Python executable, native CLI and public CA are hash-pinned. Session cleanup is
+Python executable, native CLI and public CA are hash-pinned. Ordinary session cleanup is
 owned by the native CLI; cancellation is forwarded and bounded probes allow it
 time to revoke. Force-killing the host cannot guarantee immediate revocation;
 the configured TTL bounds a surviving session. Delegated workers deliberately
@@ -62,3 +62,11 @@ retain their reviewed finite lifetime after admission may have been attempted;
 lost acknowledgements cannot justify revoking an admitted workload. Installing a
 new release leaves existing approvals on their exact protected version. Retain
 releases referenced by approvals, command links or administrative parser pins.
+
+Opt-in daemon rotation adds provider-owned finite lease creation/revocation and
+an authenticated opaque CONNECT relay. Run the renewal tests in the reviewed
+HTTPX runtime to verify real TLS traffic, concurrent old/new connections,
+draining, finite expiry, wrong capabilities/targets, framing limits, approval
+drift and cancellation races. Runbox owns these daemon leases and revokes them
+independently of native probe subprocess exit. This does not renew provider keys
+or change detached-worker ownership.

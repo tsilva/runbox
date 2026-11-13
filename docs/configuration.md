@@ -56,7 +56,12 @@ Runbox does not renew credentials or turn broker metadata into ordinary access.
 `session` requires a loopback `proxy` and bounded `ttl` between `1m` and `8h`.
 Use the existing reviewed lifetime. Longer app or worker sessions are not a
 reason to extend unrelated profiles. Optional reviewed `tunnel` and `worker`
-settings are described in [execution](execution.md).
+settings are described in [execution](execution.md). An opt-in fixed HTTPS daemon
+may declare `renewal: {renew-before: 15m, max-connections: 64}`. Its unchanged
+finite TTL must be at least `10m`; the renewal margin must be at least `3m` and
+at most half the TTL. Connections are bounded from 1 to 256. All replacement
+leases require the same protected approval and a successful configured read-only
+probe. This rotates session capabilities, never service credentials.
 
 `environment` contains strings only: public settings and public placeholders.
 Service credential variables require values ending in `_placeholder`. The

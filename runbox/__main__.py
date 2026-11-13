@@ -283,6 +283,11 @@ def main(arguments=None):
             ready(root, profile, runtime, archive),
             "Administrative readiness is pending; verify the same approved route before running",
         )
+    if opts.action == "run" and "renewal" in profile["session"]:
+        from .renewal import execute_renewing
+
+        require(not opts.workspace, "Renewable daemons have no staging override")
+        return execute_renewing(root, name, profile, runtime, archive, rest)
     if opts.action == "run" and "handoff" in profile["execution"]:
         from .handoff import preflight
 

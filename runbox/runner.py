@@ -6,6 +6,7 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -33,7 +34,17 @@ def workspace(root, execution, override=None):
     return path
 
 
-def command(root, profile, runtime, archive, mode, arguments, staging=None):
+def command(
+    root,
+    profile,
+    runtime,
+    archive,
+    mode,
+    arguments,
+    staging=None,
+    *,
+    existing_session=False,
+):
     require(
         mode != "run" or profile.get("ready", True),
         "This route has not passed its required upstream verification; execution remains disabled",
@@ -56,7 +67,10 @@ def command(root, profile, runtime, archive, mode, arguments, staging=None):
             root, profile, runtime, archive, mode, arguments, selected
         )
         return PROVIDERS[profile["provider"]["type"]].command(
-            profile, runtime, child
+            profile,
+            runtime,
+            child,
+            **({"existing_session": True} if existing_session else {}),
         ), cwd
     sandbox = []
     if execution["sandbox"] == "macos-staging":
@@ -126,7 +140,12 @@ def command(root, profile, runtime, archive, mode, arguments, staging=None):
         encoded,
         *arguments,
     ]
-    return PROVIDERS[profile["provider"]["type"]].command(profile, runtime, child), cwd
+    return PROVIDERS[profile["provider"]["type"]].command(
+        profile,
+        runtime,
+        child,
+        **({"existing_session": True} if existing_session else {}),
+    ), cwd
 
 
 def execute(
@@ -140,6 +159,7 @@ def execute(
     before_start=None,
     sanitize=False,
     stderr_policy="inherit",
+    report_probe=True,
 ):
     env = {
         "HOME": str(Path.home()),
@@ -173,8 +193,9 @@ def execute(
                 pass
 
     try:
-        for number in (signal.SIGINT, signal.SIGTERM):
-            previous[number] = signal.signal(number, forward)
+        if threading.current_thread() is threading.main_thread():
+            for number in (signal.SIGINT, signal.SIGTERM):
+                previous[number] = signal.signal(number, forward)
         if probe:
             try:
                 deadline = time.monotonic() + 65
@@ -233,7 +254,8 @@ def execute(
                 process.returncode == 0 and len(records) == 1,
                 "Online check failed; renew login or review the route; provider diagnostics withheld",
             )
-            print(json.dumps(records[0]))
+            if report_probe:
+                print(json.dumps(records[0]))
         elif sanitize:
             import selectors
             from .output import safe_output

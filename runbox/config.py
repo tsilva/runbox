@@ -211,7 +211,9 @@ def profile(value):
         "Unsupported provider",
     )
     PROVIDERS[provider["type"]](provider)
-    session = fields(value["session"], ("ttl", "proxy"), ("tunnel", "worker"))
+    session = fields(
+        value["session"], ("ttl", "proxy"), ("tunnel", "worker", "renewal")
+    )
     if "tunnel" in session or "worker" in session:
         from .sessions import validate
 
@@ -479,6 +481,10 @@ def profile(value):
                 ),
                 "Additional verification must use an existing exact GET route",
             )
+    if "renewal" in session:
+        from .renewal import validate as validate_renewal
+
+        validate_renewal(value)
     return value
 
 

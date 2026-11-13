@@ -129,3 +129,34 @@ These controls cover the reviewed child and owned helpers. They do not isolate a
 full-access agent or another process running as the same host user. Signing,
 OAuth renewal, privileged proxy bootstrap and unsupported transports remain
 separate trusted components; no execution policy supplies raw keys as a fallback.
+
+## Renewable fixed HTTPS daemons
+
+Optional `session.renewal` supports a fixed, no-argument daemon with
+`sandbox: none`, `cwd: repo`, an explicit provider-local `handoff`, a pinned
+`probe-argv` and an HTTPS HTTP policy. Workspace overrides, services, delegated
+workers, tunnels, preloads and input/output selectors are unsupported. The daemon
+must honor the explicit proxy/CA variables and open new connections for new
+operations. Persistent connection pools do not acquire a replacement capability
+until they reconnect; transport compatibility requires actual-client review.
+
+Runbox starts one authenticated loopback CONNECT relay for that invocation. It
+connects only to the pinned provider proxy and permits only the declared HTTPS
+origin. TLS remains opaque; the upstream proxy enforces service permissions. New
+connections use the latest verified finite lease. Established tunnels remain on
+their original lease until drained or that lease expires. Requests are never
+replayed or retargeted. A stream cannot outlive its original finite lease.
+
+Before creating and publishing every replacement, Runbox rechecks the unchanged
+approved configuration, source, runtime, CA and release. The configured read-only
+probe validates the new capability and native CA fingerprint. Approval drift or
+renewal failure closes new admissions without restarting the app; existing
+tunnels drain within their original lifetime. Recovery requires explicit review
+and a new invocation. Startup port checks run only before starting the daemon.
+
+Capabilities stay in memory and scoped child environments. Output is sanitized.
+Idle retired leases and all invocation-owned leases on shutdown are revoked;
+a lost revocation acknowledgement retains the original TTL as the final bound.
+Forced host termination cannot guarantee immediate revocation. Detached-worker
+ownership is unchanged. This opt-in host execution remains separate from normal
+application commands and never renews source keys or expands service scope.

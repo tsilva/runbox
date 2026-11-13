@@ -51,6 +51,20 @@ instructions from consumer docs; retain only essential routing/security guidance
 and necessary integration hooks. Do not replace domain-specific application logic
 with launcher machinery. Archived repositories remain archived.
 
+## Renewable daemon sessions
+
+Explicitly approved fixed HTTPS daemons may opt into finite session rotation.
+A shared authenticated loopback CONNECT relay selects a fresh lease for new
+connections while established tunnels drain on their original lease. Native
+session lifetimes and service scope remain unchanged; no service keys are read.
+Every replacement requires unchanged approved configuration, source, runtime,
+public CA and release, followed by its configured read-only verification.
+
+Rotation failure or approval drift denies new connections without restarting the
+application or replaying requests. Existing tunnels retain only their original
+finite lifetime. Owned daemon leases are revoked after draining or shutdown;
+detached workers retain their separate admission and ownership rules.
+
 ## Deferred
 
 Additional secret providers and new sandbox engines remain future extensions.
