@@ -14,6 +14,7 @@ Use bounded read-only live checks only after fake checks pass. Never use real
 inference or user documents as migration fixtures.
 
 Keep public docs reproducible and operator-independent. Private reports and
-captures belong under ignored `.internal/`. Do not unarchive or push the archived
-Repologogen pilot; its migration remains local. Existing broker jobs, global
-defaults and other repository launchers are outside this pilot's scope.
+captures belong under ignored `.internal/`. Preserve archived repository state; publication requires the authorized scope
+and any necessary explicit archive-state exception. Preserve existing scopes,
+schedules, concurrent edits and ordinary standalone use.
+Track every configured route and verify it before removing its old launcher.

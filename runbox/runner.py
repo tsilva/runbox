@@ -6,6 +6,7 @@ import os
 import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from .config import Error, require
@@ -33,7 +34,30 @@ def workspace(root, execution, override=None):
 
 
 def command(root, profile, runtime, archive, mode, arguments, staging=None):
+    require(
+        mode != "run" or profile.get("ready", True),
+        "This route has not passed its required upstream verification; execution remains disabled",
+    )
     execution = profile["execution"]
+    if (
+        execution["sandbox"] == "macos-command"
+        or execution["sandbox"] == "none"
+        and "command" in execution
+    ):
+        from .sandbox import command as sandbox_command
+
+        selected = (
+            workspace(root, execution, staging) if "workspace" in execution else None
+        )
+        require(
+            not staging or selected is not None, "This profile has no staging override"
+        )
+        child, cwd = sandbox_command(
+            root, profile, runtime, archive, mode, arguments, selected
+        )
+        return PROVIDERS[profile["provider"]["type"]].command(
+            profile, runtime, child
+        ), cwd
     sandbox = []
     if execution["sandbox"] == "macos-staging":
         require(
@@ -44,6 +68,11 @@ def command(root, profile, runtime, archive, mode, arguments, staging=None):
             mode == "probe"
             or (arguments and arguments[0] == execution["python"]["command"]),
             "Only the reviewed Python command is allowed",
+        )
+        allowed = execution["python"].get("arguments")
+        require(
+            mode == "probe" or allowed is None or arguments[1:] in allowed,
+            "Command arguments are outside the reviewed allowlist",
         )
         cwd = workspace(root, execution, staging)
         home = str(cwd / "home")
@@ -100,19 +129,39 @@ def command(root, profile, runtime, archive, mode, arguments, staging=None):
     return PROVIDERS[profile["provider"]["type"]].command(profile, runtime, child), cwd
 
 
-def execute(argv, cwd, probe=False):
+def execute(
+    argv,
+    cwd,
+    probe=False,
+    *,
+    health=None,
+    extra_environment=None,
+    redactions=(),
+    before_start=None,
+    sanitize=False,
+    stderr_policy="inherit",
+):
     env = {
         "HOME": str(Path.home()),
         "PATH": "/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin",
     }
+    env.update(extra_environment or {})
+    if before_start:
+        before_start()
     # Native CLI owns session revocation; forward cancellation and allow its cleanup to finish.
     process = subprocess.Popen(
         argv,
         cwd=cwd,
         env=env,
         start_new_session=True,
-        stdout=subprocess.PIPE if probe else None,
-        stderr=subprocess.PIPE if probe else None,
+        stdout=subprocess.PIPE if probe or sanitize else None,
+        stderr=subprocess.PIPE
+        if probe
+        else subprocess.DEVNULL
+        if stderr_policy == "discard"
+        else subprocess.STDOUT
+        if sanitize
+        else None,
     )
     previous = {}
 
@@ -128,7 +177,18 @@ def execute(argv, cwd, probe=False):
             previous[number] = signal.signal(number, forward)
         if probe:
             try:
-                stdout, _ = process.communicate(timeout=65)
+                deadline = time.monotonic() + 65
+                while True:
+                    if health:
+                        health()
+                    try:
+                        stdout, _ = process.communicate(
+                            timeout=min(0.5, max(0.01, deadline - time.monotonic()))
+                        )
+                        break
+                    except subprocess.TimeoutExpired:
+                        if time.monotonic() >= deadline:
+                            raise
             except subprocess.TimeoutExpired:
                 forward(signal.SIGTERM, None)
                 try:
@@ -150,12 +210,23 @@ def execute(argv, cwd, probe=False):
                     continue
                 if (
                     type(item) is dict
-                    and set(item)
-                    == {"ok", "read_only", "credential_mode", "model_count"}
+                    and {"ok", "read_only", "credential_mode"}
+                    <= set(item)
+                    <= {
+                        "ok",
+                        "read_only",
+                        "credential_mode",
+                        "model_count",
+                        "item_count",
+                    }
                     and item["ok"] is True
                     and item["read_only"] is True
-                    and item["credential_mode"] == "public-placeholder"
-                    and type(item["model_count"]) is int
+                    and item["credential_mode"] in ("public-placeholder", "none")
+                    and all(
+                        type(item[key]) is int and item[key] >= 0
+                        for key in ("model_count", "item_count")
+                        if key in item
+                    )
                 ):
                     records.append(item)
             require(
@@ -163,11 +234,75 @@ def execute(argv, cwd, probe=False):
                 "Online check failed; renew login or review the route; provider diagnostics withheld",
             )
             print(json.dumps(records[0]))
+        elif sanitize:
+            import selectors
+            from .output import safe_output
+
+            selector = selectors.DefaultSelector()
+            selector.register(process.stdout, selectors.EVENT_READ)
+            pending, oversized = b"", False
+            try:
+                while selector.get_map():
+                    if health:
+                        health()
+                    for key, _ in selector.select(0.25):
+                        block = os.read(key.fileobj.fileno(), 8192)
+                        if not block:
+                            selector.unregister(key.fileobj)
+                            if pending and not oversized:
+                                print(
+                                    safe_output(
+                                        pending.decode(errors="replace"), redactions
+                                    ),
+                                    end="",
+                                    flush=True,
+                                )
+                            continue
+                        pending += block
+                        while b"\n" in pending:
+                            line, _, pending = pending.partition(b"\n")
+                            if not oversized and len(line) <= 65536:
+                                print(
+                                    safe_output(
+                                        line.decode(errors="replace"), redactions
+                                    ),
+                                    flush=True,
+                                )
+                            else:
+                                print("[oversized command output withheld]", flush=True)
+                            oversized = False
+                        if len(pending) > 65536:
+                            oversized, pending = True, b""
+                process.wait()
+            finally:
+                selector.close()
         else:
-            process.wait()
+            while process.poll() is None:
+                if health:
+                    health()
+                try:
+                    process.wait(timeout=0.25)
+                except subprocess.TimeoutExpired:
+                    pass
         return (
             process.returncode if process.returncode >= 0 else 128 - process.returncode
         )
+    except BaseException:
+        if process.poll() is None:
+            forward(signal.SIGTERM, None)
+            try:
+                process.communicate(timeout=15)
+            except subprocess.TimeoutExpired:
+                forward(signal.SIGKILL, None)
+                process.communicate()
+                raise Error(
+                    "Unresponsive session stopped; immediate revocation unverified; TTL still applies"
+                ) from None
+        raise
     finally:
+        if process.stdout:
+            process.stdout.close()
+        if process.stderr:
+            process.stderr.close()
         for number, handler in previous.items():
             signal.signal(number, handler)

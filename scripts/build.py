@@ -19,8 +19,18 @@ def build(output):
         "__main__.py": b"from runbox.__main__ import entry\nraise SystemExit(entry())\n"
     }
     files["licenses/Runbox-LICENSE"] = (ROOT / "LICENSE").read_bytes()
+    resources = {}
+    for path in sorted((ROOT / "runbox/resources").rglob("*")):
+        if path.is_symlink():
+            raise SystemExit("Shared resources must not contain symlinks")
+        if path.is_file():
+            name = str(path.relative_to(ROOT / "runbox/resources"))
+            resources["resources/" + name] = path.read_bytes()
+            files["runbox/resources/" + name] = path.read_bytes()
     for package in (ROOT / "runbox", Path(yaml.__file__).parent):
         for path in sorted(package.rglob("*.py")):
+            if path.is_symlink():
+                raise SystemExit("Runtime source must not contain symlinks")
             files[str(Path(package.name) / path.relative_to(package))] = (
                 path.read_bytes()
             )
@@ -40,10 +50,17 @@ def build(output):
             bundle.writestr(info, data)
     sandbox = output / "staging.sb"
     sandbox.write_bytes((ROOT / "runbox/staging.sb").read_bytes())
+    for name, data in resources.items():
+        path = output / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
     manifest = {
         path.name: hashlib.sha256(path.read_bytes()).hexdigest()
         for path in (archive, sandbox)
     }
+    manifest.update(
+        {name: hashlib.sha256(data).hexdigest() for name, data in resources.items()}
+    )
     (output / "checksums.json").write_text(json.dumps(manifest, indent=2) + "\n")
     print("Built runbox.pyz, staging.sb and checksums.json")
 

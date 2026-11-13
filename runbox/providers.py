@@ -15,6 +15,11 @@ class Infisical:
         provider, session = profile["provider"], profile["session"]
         return [
             runtime["infisical"],
+            *(
+                ["--profile=" + provider["login-profile"]]
+                if "login-profile" in provider
+                else []
+            ),
             "agent-vault",
             "run",
             "--domain=" + provider["instance"],
@@ -27,6 +32,7 @@ class Infisical:
             "--silent",
             "--telemetry=false",
             "--no-skills",
+            *(["--no-mcp-servers"] if provider.get("no-mcp-servers") else []),
             "--",
             *child,
         ]

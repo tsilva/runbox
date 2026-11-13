@@ -13,6 +13,9 @@ from .guard import Guard
 
 
 def environment(profile, runtime, home):
+    from .sessions import dynamic_environment
+
+    delegated = dynamic_environment(profile)
     proxy = os.environ.get("HTTP_PROXY", "")
     parsed = urllib.parse.urlsplit(proxy)
     expected = urllib.parse.urlsplit("http://" + profile["session"]["proxy"])
@@ -43,9 +46,19 @@ def environment(profile, runtime, home):
         not os.environ.get("NO_PROXY") and not os.environ.get("no_proxy"),
         "Proxy bypass rejected",
     )
+    instance = profile["provider"]["instance"]
+    require(
+        os.environ.get("INFISICAL_AGENT_VAULT_URL", instance) == instance,
+        "Unexpected native provider marker",
+    )
     result = {
         "HOME": home,
-        "PATH": "/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+        "PATH": ":".join(
+            [
+                *runtime.get("path", []),
+                "/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+            ]
+        ),
         **profile["environment"],
         "HTTP_PROXY": proxy,
         "HTTPS_PROXY": proxy,
@@ -56,8 +69,11 @@ def environment(profile, runtime, home):
         "SSL_CERT_FILE": runtime["ca-file"],
         "REQUESTS_CA_BUNDLE": runtime["ca-file"],
         "CURL_CA_BUNDLE": runtime["ca-file"],
+        "NODE_EXTRA_CA_CERTS": runtime["ca-file"],
         "PYTHONDONTWRITEBYTECODE": "1",
         "HF_HUB_DISABLE_IMPLICIT_TOKEN": "1",
+        "INFISICAL_AGENT_VAULT_URL": instance,
+        **delegated,
     }
     for key, value in profile["environment"].items():
         require(
@@ -91,6 +107,13 @@ def main(payload, arguments):
             body = json.loads(response.read(4 * 1024 * 1024))
         rows = body.get("data")
         require(isinstance(rows, list), "Invalid model catalog")
+        for path in policy.get("additional-probes", []):
+            request = urllib.request.Request(
+                urllib.parse.urlunsplit((base.scheme, base.netloc, path, "", "")),
+                headers={"Authorization": "Bearer " + policy["placeholder"]},
+            )
+            with urllib.request.urlopen(request, timeout=25):
+                pass
         print(
             json.dumps(
                 {
@@ -106,6 +129,10 @@ def main(payload, arguments):
     require(
         arguments and arguments[0] == python["command"],
         "Only the reviewed Python command is allowed",
+    )
+    require(
+        python.get("arguments") is None or arguments[1:] in python["arguments"],
+        "Command arguments are outside the reviewed allowlist",
     )
     # -B prevents writes, not reads. Never load unpinned repository bytecode.
     sys.pycache_prefix = "/dev/null"

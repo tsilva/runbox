@@ -14,8 +14,8 @@ policies remain separate so another provider or sandbox can be added later.
 
 Ordinary commands use placeholders, scoped process-local proxy sessions, a
 pinned instance and CA, bounded TTL and native revocation. They never renew keys,
-fetch raw credentials or widen service permissions. The existing renewal broker
-remains separate. Repository configuration cannot approve itself; trusted local
+fetch raw credentials or widen service permissions. The renewal broker remains a separate privileged component while consuming the
+same Runbox configuration; it must preserve its registered scope and schedules. Repository configuration cannot approve itself; trusted local
 approval binds configuration, runtime and relevant source integrity.
 
 Preserve Repologogen's existing service scope, Python command, macOS sandbox,
@@ -24,8 +24,35 @@ repository archived and retain its deprecation notice. Verify with synthetic
 actual-client requests, application tests and a bounded read-only live check;
 do not submit real inference or personal data for migration testing.
 
+## Fleet migration
+
+Migrate every previously configured repository and local service setup to Runbox.
+The maintained inventory determines completion. Consolidate native and broker
+Infisical YAML into `.runbox.yaml`; leave no `.infisical.yaml` or
+`.infisical.*.yaml` files in the maintained fleet. Replace duplicated credential
+launch wrappers with shared Runbox capabilities and verify each established route
+without weakening scopes or protections. Preserve concurrent work and existing
+credential-renewal behavior. Previously unavailable upstream access remains an
+explicit limitation, never a reason for fallback.
+
+Runbox invocation belongs outside ordinary application/package commands. Agents
+read each root configuration and use its declared command profiles. Explicit
+neutral executor inputs may be supplied externally; applications must not
+automatically discover a personal runner or require it for normal operation.
+
+Keep active applications, scheduled jobs and admitted remote workloads running.
+Preserve their reviewed session lifetimes and ownership; controller cleanup must
+not revoke an already admitted detached worker. Command compatibility can use
+links to the shared runner with owner-reviewed metadata, without copied wrapper code.
+
+Runbox is optional personal agent tooling. Normal repository commands and
+end-user setup must work without it. Remove obsolete agent-specific launch
+instructions from consumer docs; retain only essential routing/security guidance
+and necessary integration hooks. Do not replace domain-specific application logic
+with launcher machinery. Archived repositories remain archived.
+
 ## Deferred
 
-Additional secret providers, new sandbox engines, automatic fleet migration,
-broker integration and unsupported transports require future implementation and
-compatibility review. They are not prerequisites for the initial pilot.
+Additional secret providers and new sandbox engines remain future extensions.
+Unsupported transports need compatibility review and must fail explicitly without
+raw-key injection or broadened permissions.

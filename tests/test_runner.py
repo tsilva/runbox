@@ -16,6 +16,23 @@ from tests.support import PROFILE, fixture
 
 
 class RunnerTests(unittest.TestCase):
+    def test_reviewed_login_and_mcp_suppression_are_explicit_native_flags(self):
+        selected = {
+            **PROFILE,
+            "provider": {
+                **PROFILE["provider"],
+                "login-profile": "operator@example.invalid--organization",
+                "no-mcp-servers": True,
+            },
+        }
+        argv = Infisical.command(
+            selected,
+            {"infisical": "/trusted/cli", "ca-fingerprint": "SHA256:fixture"},
+            ["client"],
+        )
+        self.assertEqual(argv[1], "--profile=operator@example.invalid--organization")
+        self.assertIn("--no-mcp-servers", argv[: argv.index("--")])
+
     def test_termination_waits_for_native_cleanup(self):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary).resolve()

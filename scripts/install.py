@@ -44,9 +44,16 @@ def main():
     if not python.is_file() or not os.access(python, os.X_OK):
         raise SystemExit("Reviewed Python is unavailable")
     manifest = json.loads((source / "checksums.json").read_text())
-    if set(manifest) != {"runbox.pyz", "staging.sb"} or any(
-        digest(source / n) != h for n, h in manifest.items()
-    ):
+    valid_names = {"runbox.pyz", "staging.sb"} <= set(manifest) and all(
+        name in ("runbox.pyz", "staging.sb")
+        or (
+            name.startswith("resources/")
+            and not Path(name).is_absolute()
+            and all(p not in ("", ".", "..") for p in name.split("/"))
+        )
+        for name in manifest
+    )
+    if not valid_names or any(digest(source / n) != h for n, h in manifest.items()):
         raise SystemExit("Build checksum mismatch")
     prefix = Path.home() / ".config/runbox"
     private(prefix)
@@ -59,6 +66,10 @@ def main():
     private(release)
     for name in manifest:
         destination = release / name
+        parent = release
+        for part in Path(name).parts[:-1]:
+            parent = parent / part
+            private(parent)
         if destination.exists() and digest(destination) != manifest[name]:
             raise SystemExit("Existing release content differs")
         if not destination.exists():
@@ -83,7 +94,7 @@ def main():
         + shlex.quote(str(python))
         + " -I -S -c "
         + shlex.quote(code)
-        + ' "$@"\n'
+        + ' --invocation "$0" "$@"\n'
     )
     launcher.chmod(0o700)
     temporary = binary.with_name(".runbox-install-" + str(os.getpid()))

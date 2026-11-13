@@ -36,6 +36,13 @@ Execution policies compose independently with providers; adding a provider does
 not grant a sandbox exception. Unknown providers and sandbox policies are errors.
 There is no dynamic privileged plugin loading.
 
+Run `ruff check runbox tests scripts` and the Node resource tests with a reviewed
+Node runtime. Packaged synthetic checks cover Python HTTP clients, TLS probes,
+Node adapters and filesystem/network denials. Service, worker-session, command-link
+and input/output tests must verify failure cleanup and pre-authentication refusals,
+not only valid metadata. Never install dependencies into a consumer merely to
+test an unchanged application; record missing or stale baseline environments.
+
 Runbox is not a secret manager, credential-renewal broker, global process
 interceptor or universal sandbox. Initial generic commands must honor native
 HTTP proxy settings. gRPC, local signing, OAuth refresh, uploads and other
@@ -50,4 +57,8 @@ reviewed installations, not individually attested distribution contents; the
 Python executable, native CLI and public CA are hash-pinned. Session cleanup is
 owned by the native CLI; cancellation is forwarded and bounded probes allow it
 time to revoke. Force-killing the host cannot guarantee immediate revocation;
-the configured TTL bounds a surviving session.
+the configured TTL bounds a surviving session. Delegated workers deliberately
+retain their reviewed finite lifetime after admission may have been attempted;
+lost acknowledgements cannot justify revoking an admitted workload. Installing a
+new release leaves existing approvals on their exact protected version. Retain
+releases referenced by approvals, command links or administrative parser pins.

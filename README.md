@@ -65,9 +65,9 @@ check. A copied repository, new worktree or changed source needs its own review.
 
 ## Execution policies
 
-The `none` policy supports ordinary commands that honor native HTTP proxy
-settings. It provides no operating-system isolation and is never a fallback
-for a profile that requires a sandbox.
+The `none` policy supports ordinary or fixed, integrity-checked commands that
+honor native HTTP proxy settings. It adds no operating-system isolation and is
+never a fallback for a profile that requires a sandbox.
 
 The initial `macos-staging` policy retains a stricter Python workflow: one
 approved console command, exact HTTP routes, read-only source, isolated HOME,
@@ -76,12 +76,22 @@ staging-only writes and proxy-only network access. It requires macOS's
 and trusted setup are outside this child boundary.
 
 Changing provider adapters does not change these execution policies. Additional
-providers and sandbox backends can be implemented independently; only Infisical
-and the two policies above are implemented today.
+providers and sandbox backends can be implemented independently. The additional
+`macos-command` policy compiles reviewed filesystem, executable and network rules
+from data. Shared Python and Node clients replace duplicated launchers; optional
+local-service coordination, delegated sessions and provider-local app handoffs
+preserve existing setups. See [execution policies](docs/execution.md).
 
-See [migration](docs/migration.md) for the archived Repologogen pilot and
+Runbox is optional tooling for a contributor's access setup. A consumer's normal
+commands should work with its ordinary environment without installing Runbox.
+Existing callers can use command links to the identical shared runner, backed by
+owner-reviewed metadata rather than copied wrapper scripts.
+
+See [migration](docs/migration.md) for fleet cutover and the archived Repologogen pilot, and
 [development](docs/development.md) for reproducible verification and limitations.
 
 ## License
 
 [MIT](LICENSE). The standalone archive includes PyYAML's license.
+
+For global agent discovery rules and external invocation, see [agent integration](docs/agents.md).

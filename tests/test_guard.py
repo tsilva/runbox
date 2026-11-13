@@ -9,6 +9,56 @@ from tests.support import PROFILE
 
 
 class GuardTests(unittest.TestCase):
+    def test_exact_queries_are_preserved_and_unreviewed_queries_rejected(self):
+        from copy import deepcopy
+
+        policy = deepcopy(PROFILE["http"])
+        policy["routes"].append(
+            {
+                "method": "GET",
+                "path": "/api/v1/openrouter/models",
+                "queries": [
+                    "",
+                    "output_modalities=image",
+                    "output_modalities=embeddings",
+                ],
+                "forward-host": "localhost:8082",
+            }
+        )
+        guard = Guard(policy)
+        headers = {"Authorization": "Bearer " + policy["placeholder"]}
+        url = policy["base-url"] + "/openrouter/models?output_modalities=image"
+        self.assertEqual(
+            guard.validate("GET", url, headers), url.replace("127.0.0.1", "localhost")
+        )
+        with self.assertRaises(PolicyError):
+            guard.validate("GET", url + "&token=synthetic", headers)
+
+    def test_metadata_route_template_and_loopback_alias_are_get_only(self):
+        from copy import deepcopy
+
+        policy = deepcopy(PROFILE["http"])
+        policy["routes"].append(
+            {
+                "method": "GET",
+                "path": "/api/v1/openrouter/models/{segment}/{segment}/endpoints",
+                "forward-host": "localhost:8082",
+            }
+        )
+        guard = Guard(policy)
+        headers = {"Authorization": "Bearer " + policy["placeholder"]}
+        url = policy["base-url"] + "/openrouter/models/example/model-v1/endpoints"
+        self.assertEqual(
+            guard.validate("GET", url, headers), url.replace("127.0.0.1", "localhost")
+        )
+        for method, target in (
+            ("POST", url),
+            ("GET", url + "/extra"),
+            ("GET", url.replace("model-v1", "..")),
+        ):
+            with self.assertRaises(PolicyError):
+                guard.validate(method, target, headers)
+
     def test_exact_routes_placeholders_extra_auth_and_failure_latch(self):
         policy = PROFILE["http"]
         headers = {"Authorization": "Bearer " + policy["placeholder"]}

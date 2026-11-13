@@ -9,6 +9,38 @@ from tests.support import PROFILE, fixture
 
 
 class TrustTests(unittest.TestCase):
+    def test_private_runtime_files_and_sdk_integrity_are_pinned(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary).resolve()
+            root, runtime, archive = fixture(home)
+            settings = home / "settings.json"
+            settings.write_text('{"metadata":"synthetic"}')
+            settings.chmod(0o600)
+            dependencies = home / "deps"
+            dependencies.mkdir(mode=0o700)
+            sdk = dependencies / "sdk.py"
+            sdk.write_text("# synthetic SDK")
+            runtime.update(
+                {
+                    "files": {"settings": {"path": str(settings), "private": True}},
+                    "directories": {
+                        "receipts": {"path": str(dependencies), "private": True}
+                    },
+                    "imports": [str(dependencies)],
+                    "integrity-files": [str(sdk)],
+                }
+            )
+            with patch("pathlib.Path.home", return_value=home):
+                approve(root, "dev", PROFILE, runtime, archive)
+                verified(root, "dev", PROFILE, archive)
+                sdk.write_text("# changed SDK")
+                with self.assertRaises(Error):
+                    verified(root, "dev", PROFILE, archive)
+                sdk.write_text("# synthetic SDK")
+                dependencies.chmod(0o755)
+                with self.assertRaises(Error):
+                    verified(root, "dev", PROFILE, archive)
+
     def test_pins_and_approval_permissions(self):
         with tempfile.TemporaryDirectory() as temporary:
             home = Path(temporary).resolve()
