@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "profiles": [],
+  "sources": [
+    {
+      "path": "image-assets/sources/originals/logo-source.png",
+      "sha256": "8b552ca08359a8107a894d7ad3b468ac5764ee27d36b20a2bc1dcc60e8bf2254"
+    },
+    {
+      "path": "image-assets/sources/originals/icon-source.png",
+      "sha256": "bf12c2e94a27de51ea8470357cee64c214774550762245849b050f8c3523cad7"
+    }
+  ],
+  "exports": [
+    {
+      "role": "readme-logo",
+      "path": "logo.png",
+      "sha256": "2bc373a856645ee5d0b853358dab471516de8ef4388e987e1dbdc928b0a0c65f",
+      "source": "image-assets/sources/originals/logo-source.png"
+    },
+    {
+      "role": "favicon",
+      "path": "image-assets/web-seo/favicon/favicon.ico",
+      "sha256": "e189e6958313a8a7e0202b312145240f52266380791065e060b3f8926339b5e9",
+      "source": "image-assets/sources/originals/icon-source.png"
+    },
+    {
+      "role": "social-preview",
+      "path": "image-assets/web-seo/og-image-1200x630.png",
+      "sha256": "7c301397fdea281dbecf397d53202183b1b4f35fb6662970d79ec01e5751f399",
+      "source": "image-assets/sources/originals/logo-source.png"
+    }
+  ],
+  "generation": {
+    "tool": "Native Codex ImageGen",
+    "modelStatus": "Exact model not exposed by the tool",
+    "prompts": "image-assets/prompts.md"
+  },
+  "derivations": {
+    "logo-source": "Magenta chroma-key removal with border sampling, soft matte thresholds 12/220 and despill.",
+    "icon-source": "Magenta chroma-key removal with border sampling, soft matte thresholds 12/220 and despill.",
+    "root-logo": "Alpha-trimmed logo, contained within 960 x 960, with 24 px transparent padding.",
+    "social-preview": "Deterministic 1200 x 630 white canvas with the primary logo centered."
+  }
+}

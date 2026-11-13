@@ -1,4 +1,6 @@
 <p align="center">
+  <img src="logo.png" alt="Runbox" width="320">
+  <br>
 <!-- repo-tagline:start -->
 <strong>📦 One command for reviewed access and execution 🔐</strong>
 <!-- repo-tagline:end -->
