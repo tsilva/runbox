@@ -31,15 +31,17 @@ class Infisical:
             "agent-vault",
             "run",
             "--domain=" + provider["instance"],
-            "--project-id=" + provider["project-id"],
             *(
                 []
                 if existing_session
-                else ["--access-bundle=" + provider["access-bundle"]]
+                else [
+                    "--project-id=" + provider["project-id"],
+                    "--access-bundle=" + provider["access-bundle"],
+                    "--ttl=" + session["ttl"],
+                ]
             ),
             "--proxy=" + session["proxy"],
             "--ca-fingerprint=" + runtime["ca-fingerprint"],
-            "--ttl=" + session["ttl"],
             "--no-ca-trust",
             "--silent",
             "--telemetry=false",

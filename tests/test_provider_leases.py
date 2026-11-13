@@ -37,6 +37,8 @@ class OwnedLeaseTests(unittest.TestCase):
             self.profile, self.runtime, ["probe"], existing_session=True
         )
         self.assertFalse(any(arg.startswith("--access-bundle=") for arg in command))
+        self.assertFalse(any(arg.startswith("--project-id=") for arg in command))
+        self.assertFalse(any(arg.startswith("--ttl=") for arg in command))
         self.assertNotIn("agv_fake", " ".join(command))
         self.assertEqual(
             Infisical.session_environment(self.value),
