@@ -26,7 +26,7 @@ other contributors do not need it; ordinary app commands should remain independe
 ## Profiles and source inventories
 
 Each profile requires `provider`, `session`, `environment` and `execution`.
-Optional `http`, `services` and `ready` add reviewed behavior. `ready: false`
+Optional `http`, `services`, `probe` and `ready` add reviewed behavior. `ready: false`
 blocks ordinary execution before authentication; it does not establish that an
 upstream route works merely because its metadata parses.
 
@@ -112,6 +112,22 @@ identity/status assertions or status-only GETs that discard bodies. Optional
 discarded. Other reviewed clients can provide a fixed `probe-argv`; their code
 and runtime must remain pinned. Successful output contains only the safe result
 schema, with optional model/item counts, never provider bodies or capabilities.
+
+Optional profile `probe: {execution: ..., http: ...}` supplies a separate
+online-check policy using the existing complete command-execution and HTTP
+schemas; `http` is optional. `check --online` selects it after verifying the
+original profile's approval. Ordinary `run` and command selection keep their
+original policies, including unrestricted `sandbox: none` commands. A probe
+cannot override the provider, source, environment, session or services, and
+retains required OS sandboxing. Its fixed `probe-argv`, source integrity and
+runtime are reviewed in the same approval. Interactive inputs, outputs, handoffs
+and readiness operations are unsupported in this check policy. Domain SDK checks
+may use a pinned entrypoint with fixed `client.probe-arguments`.
+
+An HTTP probe may set a fixed `probe-query` that exactly matches an entry in
+that GET route's `queries`. It changes only the check URL; it does not grant new
+queries or authorize writes. Every probe must test service access rather than
+merely confirm that a placeholder or proxy variable exists.
 
 Compatibility commands can be hard links to the identical shared launcher:
 

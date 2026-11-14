@@ -11,7 +11,14 @@ from pathlib import Path
 import yaml
 
 from . import __version__
-from .config import Error, arguments_match, load, require, retired_configs
+from .config import (
+    Error,
+    arguments_match,
+    load,
+    online_profile,
+    require,
+    retired_configs,
+)
 from .providers import PROVIDERS
 from .runner import command, execute
 from .trust import approve, directory, digest, record_path, regular, state, verified
@@ -274,6 +281,8 @@ def main(arguments=None):
             )
         )
         return 0
+    if opts.action == "check":
+        profile = online_profile(profile)
     rest = opts.command if opts.action == "run" else []
     if rest[:1] == ["--"]:
         rest = rest[1:]

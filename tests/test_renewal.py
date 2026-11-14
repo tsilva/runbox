@@ -178,6 +178,55 @@ class NativeProxy:
 
 
 class RenewalTests(unittest.TestCase):
+    def test_system_sleep_triggers_renewal_without_monotonic_progress(self):
+        monotonic, wall, issued, revoked = Clock(), Clock(), [], []
+        wall.now = 1000
+
+        def factory():
+            identifier = str(uuid4())
+            issued.append(identifier)
+            return Lease(
+                identifier,
+                "http://x:agv_synthetic@127.0.0.1:8283",
+                monotonic() + 10,
+                wall_deadline=wall() + 10,
+            )
+
+        supervisor = Supervisor(
+            factory, revoked.append, 3, clock=monotonic, wall_clock=wall
+        ).start()
+        self.addCleanup(supervisor.close)
+        old = supervisor.acquire()
+        wall.now += 8
+        wait_for(lambda: len(issued) == 2)
+        self.assertEqual(monotonic(), 0)
+        self.assertEqual(supervisor.remaining(old), 2)
+        self.assertIsNot(supervisor.current, old)
+        wall.now += 3
+        wait_for(lambda: old.identifier in revoked)
+        self.assertLess(supervisor.remaining(old), 0)
+        supervisor.release(old)
+
+    def test_wall_clock_rollback_cannot_extend_original_monotonic_bound(self):
+        monotonic, wall = Clock(), Clock()
+        wall.now = 1000
+        supervisor = Supervisor(None, None, 3, clock=monotonic, wall_clock=wall)
+        lease = Lease("synthetic", "unused", 10, wall_deadline=1010)
+        supervisor.current = lease
+        supervisor.leases = [lease]
+        wall.now = 900
+        monotonic.now = 11
+        self.assertEqual(supervisor.remaining(lease), -1)
+        self.assertIsNone(supervisor.acquire())
+
+    def test_expired_wall_clock_blocks_admission_before_rotation_thread_runs(self):
+        monotonic, wall = Clock(), Clock()
+        wall.now = 1011
+        supervisor = Supervisor(None, None, 3, clock=monotonic, wall_clock=wall)
+        supervisor.current = Lease("synthetic", "unused", 10, wall_deadline=1010)
+        self.assertEqual(monotonic(), 0)
+        self.assertIsNone(supervisor.acquire())
+
     def test_slow_issuance_keeps_conservative_original_ttl_bound(self):
         for delay in (20, 65):
             expires = datetime.fromtimestamp(
@@ -190,7 +239,7 @@ class RenewalTests(unittest.TestCase):
         with self.assertRaises(Error):
             _lease_deadline(expires, 100, 100, 1000, 1000)
 
-    def setup_relay(self, *, context=None, maximum=8, fail_after=None):
+    def setup_relay(self, *, context=None, maximum=8, fail_after=None, wall_clock=None):
         proxy = NativeProxy(context)
         self.addCleanup(proxy.close)
         clock, revoked, issued = Clock(), [], []
@@ -207,9 +256,16 @@ class RenewalTests(unittest.TestCase):
                 + "@127.0.0.1:"
                 + str(proxy.port),
                 clock() + 10,
+                wall_deadline=wall_clock() + 10 if wall_clock else None,
             )
 
-        supervisor = Supervisor(factory, revoked.append, 3, clock=clock).start()
+        supervisor = Supervisor(
+            factory,
+            revoked.append,
+            3,
+            clock=clock,
+            wall_clock=wall_clock or time.time,
+        ).start()
         self.addCleanup(supervisor.close)
         relay = ConnectRelay(
             supervisor, "127.0.0.1:" + str(proxy.port), "example.test:443", maximum
@@ -432,15 +488,20 @@ class RenewalTests(unittest.TestCase):
             server = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
             server.load_cert_chain(cert, key)
             trusted = ssl.create_default_context(cafile=str(cert))
-            proxy, clock, _, relay, issued, revoked = self.setup_relay(context=server)
+            wall = Clock()
+            wall.now = 1000
+            proxy, clock, _, relay, issued, revoked = self.setup_relay(
+                context=server, wall_clock=wall
+            )
             with httpx.Client(
                 proxy=relay.url, verify=trusted, trust_env=False, timeout=2
             ) as old:
                 self.assertEqual(
                     old.get("https://example.test/old").text, "agv_synthetic1"
                 )
-                clock.now = 8
+                wall.now += 8
                 wait_for(lambda: len(issued) == 2)
+                self.assertEqual(clock(), 0)
                 with httpx.Client(
                     proxy=relay.url, verify=trusted, trust_env=False, timeout=2
                 ) as new:
@@ -451,6 +512,10 @@ class RenewalTests(unittest.TestCase):
                     old.get("https://example.test/same-tunnel").text, "agv_synthetic1"
                 )
                 self.assertNotIn(issued[0], revoked)
+                wall.now += 3
+                wait_for(lambda: issued[0] in revoked)
+                with self.assertRaises(httpx.HTTPError):
+                    old.get("https://example.test/expired-tunnel")
             wait_for(lambda: issued[0] in revoked)
             self.assertEqual(len(proxy.requests), 2)
             self.assertTrue(

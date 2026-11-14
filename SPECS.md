@@ -51,6 +51,10 @@ instructions from consumer docs; retain only essential routing/security guidance
 and necessary integration hooks. Do not replace domain-specific application logic
 with launcher machinery. Archived repositories remain archived.
 
+Every configured profile has a bounded read-only online service check. Adding a
+check must preserve ordinary command behavior, scopes, required sandboxes and
+existing jobs; a write-capable command is verified without performing its writes.
+
 ## Renewable daemon sessions
 
 Explicitly approved fixed HTTPS daemons may opt into finite session rotation.
@@ -64,6 +68,8 @@ Rotation failure or approval drift denies new connections without restarting the
 application or replaying requests. Existing tunnels retain only their original
 finite lifetime. Owned daemon leases are revoked after draining or shutdown;
 detached workers retain their separate admission and ownership rules.
+System sleep must not extend a lease's local expiry or postpone renewal past
+its server expiry. Either elapsed-time or wall-clock bounds can shorten access.
 
 ## Deferred
 

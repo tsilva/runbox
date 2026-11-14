@@ -99,7 +99,13 @@ def main(payload, arguments):
         base = urllib.parse.urlsplit(policy["base-url"])
         request = urllib.request.Request(
             urllib.parse.urlunsplit(
-                (base.scheme, base.netloc, policy["probe"], "", "")
+                (
+                    base.scheme,
+                    base.netloc,
+                    policy["probe"],
+                    policy.get("probe-query", ""),
+                    "",
+                )
             ),
             headers={"Authorization": "Bearer " + policy["placeholder"]},
         )

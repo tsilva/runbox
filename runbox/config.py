@@ -202,7 +202,7 @@ def profile(value):
     fields(
         value,
         ("provider", "session", "environment", "execution"),
-        ("http", "ready", "services"),
+        ("http", "ready", "services", "probe"),
     )
     require(type(value.get("ready", True)) is bool, "Invalid readiness flag")
     provider = value["provider"]
@@ -323,6 +323,12 @@ def profile(value):
             execution.get("client", {}).get("type") != "node-http" or "http" in value,
             "Shared Node HTTP clients require an explicit HTTP policy",
         )
+        require(
+            execution.get("client", {}).get("type") != "python"
+            or "probe" not in execution["client"]
+            or "http" in value,
+            "Shared Python identity checks require an explicit HTTP policy",
+        )
     else:
         raise Error("Unsupported sandbox backend")
     if "services" in value:
@@ -333,7 +339,7 @@ def profile(value):
         http = fields(
             value["http"],
             ("base-url", "credential-variable", "placeholder", "routes", "probe"),
-            ("probe-aliases", "additional-probes"),
+            ("probe-aliases", "additional-probes", "probe-query"),
         )
         parsed = url(http["base-url"])
         require(
@@ -453,6 +459,18 @@ def profile(value):
             and ("GET", http["probe"]) in primary_pairs,
             "Online probe must be an allowed GET route",
         )
+        query = http.get("probe-query", "")
+        require(
+            isinstance(query, str)
+            and any(
+                route["method"] == "GET"
+                and route["path"] == http["probe"]
+                and "origin" not in route
+                and query in route.get("queries", [""])
+                for route in routes
+            ),
+            "Online probe query must match its exact GET allowlist",
+        )
         aliases = http.get("probe-aliases", [])
         require(type(aliases) is list, "Invalid readiness aliases")
         for alias in aliases:
@@ -481,11 +499,45 @@ def profile(value):
                 ),
                 "Additional verification must use an existing exact GET route",
             )
+    if "probe" in value:
+        probe = fields(value["probe"], ("execution",), ("http",))
+        selected = probe["execution"]
+        require(
+            type(selected) is dict
+            and selected.get("sandbox") in ("macos-command", "none")
+            and "command" in selected
+            and "probe-argv" in selected
+            and not {"inputs", "outputs", "handoff", "readiness"} & set(selected),
+            "Independent probes require a fixed command without interactive operations",
+        )
+        require(
+            kind == "none" or selected["sandbox"] == "macos-command",
+            "Independent probes must retain required OS sandboxing",
+        )
+        # Validate a complete execution view without inheriting daemon/worker
+        # administration. Its live session still uses the original policy.
+        profile(
+            {
+                "provider": provider,
+                "session": {key: session[key] for key in ("ttl", "proxy")},
+                "environment": env,
+                **probe,
+            }
+        )
     if "renewal" in session:
         from .renewal import validate as validate_renewal
 
         validate_renewal(value)
     return value
+
+
+def online_profile(value):
+    """Select only the independently reviewed check policy; never mutate run data."""
+    if "probe" not in value:
+        return value
+    result = {key: item for key, item in value.items() if key not in ("probe", "http")}
+    result.update(value["probe"])
+    return result
 
 
 def load(path):

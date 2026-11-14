@@ -3,6 +3,7 @@
 import base64
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -12,6 +13,64 @@ from pathlib import Path
 
 from .config import Error, require
 from .providers import PROVIDERS
+
+
+def probe_failure(stdout, stderr):
+    """Retain closed diagnostic categories, never arbitrary provider text."""
+    stages = {
+        "database-query",
+        "database-permissions",
+        "agentbridge-catalog",
+        "agentbridge-upstream-auth",
+        "native-connect",
+        "metadata-query",
+        "database-scope",
+        "sandbox",
+        "session",
+        "clerk-api",
+        "clerk-instance-binding",
+        "storage",
+    }
+    command_errors = {
+        "nativecall_error",
+        "proxy_rejected",
+        "authentication_failed",
+        "connection_failed",
+        "tls_failed",
+    }
+    for line in stdout.splitlines():
+        try:
+            item = json.loads(line)
+        except (ValueError, UnicodeError):
+            continue
+        if type(item) is dict and set(item) == {"probe_error"}:
+            category = item["probe_error"]
+            if isinstance(category, str) and category in command_errors:
+                return (
+                    "Online check failed: "
+                    + category
+                    + "; provider diagnostics withheld"
+                )
+        if type(item) is dict and item.get("ok") is False:
+            stage = item.get("stage")
+            if isinstance(stage, str) and stage in stages:
+                return (
+                    "Online check failed at "
+                    + stage
+                    + "; provider diagnostics withheld"
+                )
+    for line in stderr.decode(errors="replace").splitlines():
+        status = re.fullmatch(
+            r"runbox: Service request failed \(HTTP ([1-5][0-9]{2})\); details withheld",
+            line,
+        )
+        if status:
+            return (
+                "Online check failed (HTTP "
+                + status[1]
+                + "); provider diagnostics withheld"
+            )
+    return "Online check failed; renew login or review the route; provider diagnostics withheld"
 
 
 def workspace(root, execution, override=None):
@@ -203,7 +262,7 @@ def execute(
                     if health:
                         health()
                     try:
-                        stdout, _ = process.communicate(
+                        stdout, stderr = process.communicate(
                             timeout=min(0.5, max(0.01, deadline - time.monotonic()))
                         )
                         break
@@ -252,7 +311,7 @@ def execute(
                     records.append(item)
             require(
                 process.returncode == 0 and len(records) == 1,
-                "Online check failed; renew login or review the route; provider diagnostics withheld",
+                probe_failure(stdout, stderr),
             )
             if report_probe:
                 print(json.dumps(records[0]))

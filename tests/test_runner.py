@@ -11,11 +11,42 @@ from unittest.mock import patch
 from runbox.child import environment, main
 from runbox.config import Error
 from runbox.providers import Infisical
-from runbox.runner import command, execute, workspace
+from runbox.runner import command, execute, probe_failure, workspace
 from tests.support import PROFILE, fixture
 
 
 class RunnerTests(unittest.TestCase):
+    def test_failed_probes_retain_only_closed_stages_and_numeric_http_status(self):
+        self.assertEqual(
+            probe_failure(b'{"probe_error":"connection_failed"}', b""),
+            "Online check failed: connection_failed; provider diagnostics withheld",
+        )
+        self.assertEqual(
+            probe_failure(
+                b'{"ok":false,"stage":"agentbridge-upstream-auth","private":"secret"}',
+                b"",
+            ),
+            "Online check failed at agentbridge-upstream-auth; provider diagnostics withheld",
+        )
+        self.assertEqual(
+            probe_failure(
+                b"", b"runbox: Service request failed (HTTP 401); details withheld\n"
+            ),
+            "Online check failed (HTTP 401); provider diagnostics withheld",
+        )
+        for stdout, stderr in (
+            (b'{"ok":false,"stage":"private-secret"}', b""),
+            (b'{"ok":false,"stage":[]}', b""),
+            (b'{"probe_error":"private-secret"}', b""),
+            (b'{"probe_error":"connection_failed","extra":"secret"}', b""),
+            (b"", b"private HTTP 401 body secret"),
+            (
+                b"",
+                b"runbox: Service request failed (HTTP 401); details withheld secret",
+            ),
+        ):
+            self.assertNotIn("secret", probe_failure(stdout, stderr))
+
     def test_reviewed_login_and_mcp_suppression_are_explicit_native_flags(self):
         selected = {
             **PROFILE,

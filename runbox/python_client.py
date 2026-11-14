@@ -57,7 +57,7 @@ def main(arguments):
         http = profile["http"]
         base = urllib.parse.urlsplit(http["base-url"])
         target = urllib.parse.urlunsplit(
-            (base.scheme, base.netloc, http["probe"], "", "")
+            (base.scheme, base.netloc, http["probe"], http.get("probe-query", ""), "")
         )
         request = urllib.request.Request(
             target, headers={"Authorization": "Bearer " + http["placeholder"]}

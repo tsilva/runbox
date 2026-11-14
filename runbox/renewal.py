@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from urllib.parse import unquote, urlsplit
 from uuid import UUID
 
-from .config import Error, fields, load, require
+from .config import Error, fields, load, online_profile, require
 from .output import safe_output
 
 HEADER_LIMIT = 8192
@@ -91,6 +91,7 @@ class Lease:
     identifier: str
     proxy_url: str = field(repr=False)
     deadline: float
+    wall_deadline: float | None = None
     references: int = 0
     revoking: bool = False
 
@@ -105,11 +106,13 @@ class Supervisor:
         renew_before,
         *,
         clock=time.monotonic,
+        wall_clock=time.time,
         check=None,
         on_failure=None,
     ):
         self.factory, self.revoke, self.renew_before = factory, revoke, renew_before
         self.clock = clock
+        self.wall_clock = wall_clock
         self.check = check
         self.on_failure = on_failure
         self.lock = threading.RLock()
@@ -120,6 +123,15 @@ class Supervisor:
         self.leases = []
         self.revokers = []
         self.thread = None
+
+    def remaining(self, lease):
+        # On macOS the monotonic clock can pause during system sleep. Server
+        # expiry does not pause. Either clock may shorten access; neither may
+        # extend it when the other clock reaches its original bound.
+        remaining = lease.deadline - self.clock()
+        if lease.wall_deadline is not None:
+            remaining = min(remaining, lease.wall_deadline - self.wall_clock())
+        return remaining
 
     def _fail(self):
         with self.lock:
@@ -135,7 +147,7 @@ class Supervisor:
         lease = self.factory()
         with self.lock:
             self.leases.append(lease)
-            require(lease.deadline > self.clock(), "Renewed session is already expired")
+            require(self.remaining(lease) > 0, "Renewed session is already expired")
             self.current = lease
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
@@ -159,7 +171,7 @@ class Supervisor:
             for lease in self.leases:
                 if not lease.revoking and (
                     all_owned
-                    or lease.deadline <= self.clock()
+                    or self.remaining(lease) <= 0
                     or lease is not self.current
                     and not lease.references
                 ):
@@ -176,7 +188,7 @@ class Supervisor:
             with self.lock:
                 due = (
                     not self.failed
-                    and self.current.deadline - self.clock() <= self.renew_before
+                    and self.remaining(self.current) <= self.renew_before
                 )
             if not due:
                 continue
@@ -184,7 +196,7 @@ class Supervisor:
                 candidate = self.factory()
                 with self.lock:
                     self.leases.append(candidate)
-                    invalid = self.failed or candidate.deadline <= self.clock()
+                    invalid = self.failed or self.remaining(candidate) <= 0
                     if not self.closed.is_set() and not invalid:
                         self.current = candidate
                 if invalid:
@@ -208,7 +220,7 @@ class Supervisor:
                 or self.failed
                 or not lease
                 or lease.revoking
-                or lease.deadline <= self.clock()
+                or self.remaining(lease) <= 0
             ):
                 return None
             lease.references += 1
@@ -393,7 +405,7 @@ class ConnectRelay:
                 and re.fullmatch(r"HTTP/1[.][01] 200(?: [\x20-\x7e]*)?", response[0]),
                 "Native CONNECT unavailable",
             )
-            require(lease.deadline > self.supervisor.clock(), "Session expired")
+            require(self.supervisor.remaining(lease) > 0, "Session expired")
             client.sendall(b"HTTP/1.1 200 Connection established\r\n\r\n")
             established = True
             self._pump(client, upstream, lease)
@@ -424,7 +436,7 @@ class ConnectRelay:
         for connection in peers:
             connection.setblocking(False)
         while (reading or any(pending.values())) and not self.closed.is_set():
-            if lease.deadline <= self.supervisor.clock():
+            if self.supervisor.remaining(lease) <= 0:
                 return
             readers = [s for s in reading if len(pending[peers[s]]) < BUFFER_LIMIT]
             writers = [s for s in peers if pending[s]]
@@ -522,11 +534,18 @@ def execute_renewing(root, name, profile, runtime, archive, arguments):
                 wall,
                 time.time(),
             )
+            wall_deadline = wall + deadline - beginning
             proxy = provider.proxy_url(captured, lease)
             host, port = captured["session"]["proxy"].rsplit(":", 1)
             _proxy_authorization(proxy, (host, int(port)))
             probe, cwd = command(
-                root, captured, runtime, archive, "probe", [], existing_session=True
+                root,
+                online_profile(captured),
+                runtime,
+                archive,
+                "probe",
+                [],
+                existing_session=True,
             )
             require(
                 execute(
@@ -542,10 +561,10 @@ def execute_renewing(root, name, profile, runtime, archive, arguments):
             )
             guard()
             require(
-                deadline > time.monotonic(),
+                deadline > time.monotonic() and wall_deadline > time.time(),
                 "Renewed session expired during verification",
             )
-            return Lease(identifier, proxy, deadline)
+            return Lease(identifier, proxy, deadline, wall_deadline=wall_deadline)
         except BaseException:
             if identifier:
                 try:

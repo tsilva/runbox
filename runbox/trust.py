@@ -51,7 +51,20 @@ def record_path(root, name):
 
 
 def source_pins(root, profile):
-    execution = profile["execution"]
+    pins = execution_source_pins(root, profile["execution"])
+    if "probe" in profile:
+        pins.update(
+            {
+                "probe:" + name: value
+                for name, value in execution_source_pins(
+                    root, profile["probe"]["execution"]
+                ).items()
+            }
+        )
+    return pins
+
+
+def execution_source_pins(root, execution):
     if execution["sandbox"] == "none" and "command" not in execution:
         return {}
     if (
@@ -208,7 +221,7 @@ def runtime_pins(runtime, sandbox):
     pins["path"] = [runtime_directory(Path(path)) for path in paths]
     files = runtime.get("integrity-files", [])
     require(
-        type(files) is list and len(files) <= 256,
+        type(files) is list and len(files) <= 1024,
         "Invalid external integrity inventory",
     )
     pins["integrity-files"] = {
@@ -265,6 +278,7 @@ def snapshot(root, name, profile, runtime, archive):
     if (
         profile["execution"]["sandbox"] == "macos-command"
         or "command" in profile["execution"]
+        or "probe" in profile
     ):
         import zipfile
 
