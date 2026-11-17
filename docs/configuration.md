@@ -26,6 +26,8 @@ other contributors do not need it; ordinary app commands should remain independe
 ## Profiles and source inventories
 
 Each profile requires `provider`, `session`, `environment` and `execution`.
+The separate browser-public mode below has a narrower schema; the Agent Vault
+rules in the following sections remain unchanged.
 Optional `http`, `services`, `probe` and `ready` add reviewed behavior. `ready: false`
 blocks ordinary execution before authentication; it does not establish that an
 upstream route works merely because its metadata parses.
@@ -154,6 +156,9 @@ created. This compatibility layer does not authorize the request's content.
 
 ## Explicit Node service composition
 
+See also the independent [browser-public mode](#browser-public-configuration)
+for configuration that the application and browser must receive directly.
+
 A shared `node-http` or `node-next` client can combine reviewed services without
 repository modules importing Runbox. An additional HTTP route declares all three
 fields together: exact `origin`, `credential-header` and public `placeholder`.
@@ -163,3 +168,72 @@ prefixes, credential-bearing URLs and forwarded-host overrides are rejected.
 The guard keeps each service's authentication header isolated and rejects mixed
 credentials before transport. Python and unsupported clients reject these
 Node-only route overrides. Required network/sandbox rules remain independent.
+
+## Browser-public configuration
+
+Select `provider.type: infisical-public-config` only for values intentionally
+exposed to browsers. This mode reads the exact approved Secret Manager settings
+into memory and passes them to a fixed local command's process environment.
+It creates no Agent Vault session and is never selected after another provider
+fails. It does not conceal these values from the application or browser.
+
+```yaml
+version: 1
+default: browser-development
+profiles:
+  browser-development:
+    provider:
+      type: infisical-public-config
+      instance: https://app.infisical.com
+      classification: browser-public
+      source:
+        project-id: 11111111-1111-4111-8111-111111111111
+        environment: dev
+        secret-path: /maps
+      variables:
+        VITE_GOOGLE_MAPS_API_KEY:
+          pattern: 'AIza[A-Za-z0-9_-]{35}'
+        VITE_GOOGLE_MAPS_MAP_ID:
+          pattern: '[a-f0-9]{16,32}'
+    session:
+      ttl: 2h
+    environment: {}
+    execution:
+      sandbox: none
+      command: node
+      argv: ['{node}', '{repo}/web/dev.mjs']
+      arguments: [['--port', 'auto']]
+      integrity:
+        files: [web/dev.mjs, web/package.json, web/pnpm-lock.yaml]
+```
+
+Only `VITE_`, `NEXT_PUBLIC_` and `PUBLIC_` variable names are accepted, with up
+to sixteen individually reviewed flat format patterns. Classification and names
+are declarations requiring human review; they cannot prove a value is safe to
+publish. Keep service secrets on their original credential-proxy routes.
+
+The runtime retains its existing CLI, public CA and release integrity checks.
+Also declare `files.source-ca.path` as the canonical public CA bundle for native
+source HTTPS; it is hash-pinned in the approval and provided as `SSL_CERT_FILE`.
+The native CLI uses the specified instance/project/environment/folder and optional
+login profile. Imports, expansion, recursion and personal overrides are disabled.
+Ambient credentials and proxy settings are not inherited. Each read is limited
+to thirty seconds/4096 bytes, and the complete source read to sixty seconds.
+All values must pass their format checks before the application starts.
+
+Commands require an exact argument allowlist, an approved executable substitution
+and nonempty source-integrity pins. The initial implementation supports an
+explicit `sandbox: none` fixed command only. Required-sandbox profiles cannot be
+converted as a fallback. Additional environment fields, unrestricted commands,
+proxy policies, services, tunnels, workers, renewal, staging and arbitrary probes
+are rejected. The selected command must be reviewed to keep public values out
+of persistent build outputs, environment files, caches and logs.
+
+`approve` binds the same canonical checkout, complete configuration, runtime,
+source, public CA and protected release as other profiles. `check` is offline;
+`check --online` reads/validates only the selected settings and reports a safe
+item count. It does not start the application or establish browser API access.
+`run` rereads the settings, verifies unchanged approval before every read and
+before launching, redacts values from output and bounds the owned process by the
+reviewed TTL (one minute to eight hours). Cancellation uses the shared process
+cleanup. No key renewal, secret export or automatic approval occurs.

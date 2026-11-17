@@ -199,6 +199,11 @@ def arguments_match(policy, supplied):
 
 
 def profile(value):
+    if (type(value) is dict and type(value.get("provider")) is dict
+            and value["provider"].get("type") == "infisical-public-config"):
+        from .public_config import validate
+
+        return validate(value)
     fields(
         value,
         ("provider", "session", "environment", "execution"),

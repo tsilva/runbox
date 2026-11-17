@@ -11,6 +11,12 @@ the locked pure-Python PyYAML implementation and license, with fixed ZIP timesta
 for reproducibility. A second build must produce identical archive/policy hashes.
 Install only a reviewed build; checksums detect drift, not source authenticity.
 
+To include the public-configuration mode's actual Vite client check, set
+`RUNBOX_TEST_VITE_ENTRY` to the absolute `dist/node/index.js` path in an existing
+reviewed Vite installation before running the Python tests. The check uses
+synthetic settings and an isolated app fixture; it installs no dependencies.
+Without that explicit path, only this optional client check is skipped.
+
 Transport tests additionally need the selected application's reviewed HTTPX
 runtime. Run the same unittest command with that Python to exercise HTTPX.
 macOS sandbox tests skip on other platforms; such a skip does not establish

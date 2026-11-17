@@ -115,4 +115,4 @@ class Infisical:
         _native(profile, runtime, ["revoke", identifier])
 
 
-PROVIDERS = {"infisical": Infisical}
+PROVIDERS = {"infisical": Infisical, "infisical-public-config": Infisical}

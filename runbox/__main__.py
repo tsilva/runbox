@@ -292,6 +292,14 @@ def main(arguments=None):
             ready(root, profile, runtime, archive),
             "Administrative readiness is pending; verify the same approved route before running",
         )
+    if profile["provider"]["type"] == "infisical-public-config":
+        from .public_config import run as run_public_config
+
+        require(not opts.workspace, "Public configuration has no staging override")
+        return run_public_config(
+            root, name, profile, runtime, archive, rest,
+            probe=opts.action == "check",
+        )
     if opts.action == "run" and "renewal" in profile["session"]:
         from .renewal import execute_renewing
 

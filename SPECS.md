@@ -71,6 +71,25 @@ detached workers retain their separate admission and ownership rules.
 System sleep must not extend a lease's local expiry or postpone renewal past
 its server expiry. Either elapsed-time or wall-clock bounds can shorten access.
 
+## Browser-public configuration — 17 November 2026
+
+An explicitly selected `infisical-public-config` mode may retrieve named
+browser-public settings from an approved Secret Manager source and supply them
+to an exact, source-pinned local command through its process environment. This
+mode intentionally exposes public browser configuration to the application and
+browser. It is separate from Agent Vault and is never an authentication fallback.
+
+Require explicit browser-public classification, public-prefixed variable names,
+bounded format checks and lifetime, pinned native CLI/source trust and the same
+owner-only configuration/runtime/source/release approvals as other profiles.
+Fetch only selected settings with imports, expansion, recursion and personal
+overrides disabled. Validate the complete set before starting the child. Keep
+values out of argv, files, approval records and logs; sanitize errors and child
+output. Reject broad command policies, inherited credentials and proxy/session
+composition. Offline checks do not fetch; online checks read and validate only
+the declared settings and report safe counts. Application commands remain
+independent of Runbox. Existing credential-proxy routes retain their policies.
+
 ## Deferred
 
 Additional secret providers and new sandbox engines remain future extensions.

@@ -28,6 +28,10 @@ CLI options; it does not retrieve service keys, implement a credential proxy or
 refresh credentials. The existing token broker remains a separate administrator
 tool.
 
+An explicit [browser-public configuration mode](docs/configuration.md#browser-public-configuration)
+can instead supply approved public settings to a fixed local command. The app
+and browser receive those values; this mode does not hide keys through a proxy.
+
 ## Install from source
 
 Requires Python 3.11+, `uv`, Git and a separately installed, checksum-verified
