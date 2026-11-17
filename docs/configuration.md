@@ -53,6 +53,16 @@ prints these validated inventories as JSON without authenticating.
 closed provider schema, identities, scopes, lifetimes and registered destinations.
 Runbox does not renew credentials or turn broker metadata into ordinary access.
 
+`gmail-user-oauth` metadata declares `consumer-profile`, `infisical` and `gmail`.
+The separately installed broker validates both existing OAuth records, exact
+client/account/scope, finite expiry and exclusive read-only destination before
+renewal. Compose sources permit identity checks only. Declaring this metadata
+does not approve the source or make a command runnable.
+
+`vercel-cli-oauth` metadata likewise requires `consumer-profile`, `infisical`
+and `vercel`. Its separately reviewed broker owns native CLI OAuth renewal;
+declaring the metadata grants no runnable access or automatic renewal.
+
 ## Session and public environment
 
 `session` requires a loopback `proxy` and bounded `ttl` between `1m` and `8h`.

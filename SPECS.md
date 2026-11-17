@@ -55,6 +55,23 @@ Every configured profile has a bounded read-only online service check. Adding a
 check must preserve ordinary command behavior, scopes, required sandboxes and
 existing jobs; a write-capable command is verified without performing its writes.
 
+## Complete secret-access coverage
+
+Find remaining active secret-access usages across repositories and local agent
+and service setups, including usages outside the original migration inventory.
+Agent-operated secret injection must use Runbox externally through declared,
+reviewed profiles. Normal application commands remain independent of Runbox.
+Hosted CI and production secret injection are outside this migration; discuss
+that separate expansion with the owner before working on it.
+
+Verify discovered usages individually: source and scope mapping, actual-client
+compatibility, explicit activation and bounded read-only online access. Preparation
+or metadata alone does not establish working coverage. Unsupported transports and
+missing authorization remain explicit gaps; never hide them with raw credentials,
+alternate logins or automatic trust renewal. Preserve separate trusted provisioning,
+renewal, Git authentication and managed SSH policies. Exclude archived repositories
+unless the owner currently authorizes a named archived operation.
+
 ## Renewable daemon sessions
 
 Explicitly approved fixed HTTPS daemons may opt into finite session rotation.

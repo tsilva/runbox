@@ -4,12 +4,37 @@ import os
 import re
 import urllib.parse
 import urllib.request
+import zlib
 
-from .config import Error
+from .config import Error, query_matches
 
 
 class PolicyError(Error):
     pass
+
+
+def decoded_response(content, metadata, limit=64 * 1024 * 1024):
+    """Match httplib2 decompression while bounding wire and decoded bytes."""
+    if len(content) > limit:
+        raise PolicyError("Google API response exceeds size limit")
+    headers = {k.lower(): v for k, v in metadata.items()}
+    encoding = headers.get("content-encoding", "identity").lower().strip()
+    if encoding in ("", "identity"):
+        return content, headers
+    if encoding not in ("gzip", "deflate"):
+        raise PolicyError("Unsupported Google API response encoding")
+    try:
+        decoder = zlib.decompressobj(31 if encoding == "gzip" else zlib.MAX_WBITS)
+        decoded = decoder.decompress(content, limit + 1)
+        if len(decoded) > limit or decoder.unconsumed_tail:
+            raise PolicyError("Google API response exceeds size limit")
+        if not decoder.eof or decoder.unused_data:
+            raise PolicyError("Invalid compressed Google API response")
+    except zlib.error:
+        raise PolicyError("Invalid compressed Google API response") from None
+    del headers["content-encoding"]
+    headers["content-length"] = str(len(decoded))
+    return decoded, headers
 
 
 class Guard:
@@ -38,14 +63,14 @@ class Guard:
                 re.escape(r["path"]).replace(r"\{segment\}", r"[A-Za-z0-9_.-]+"),
                 parsed.path,
             )
-            and parsed.query in r.get("queries", [""])
+            and query_matches(r, parsed.query)
         ]
         if not routes:
             raise PolicyError("Unreviewed method or route rejected")
         normalized = {str(k).lower(): str(v) for k, v in headers.items()}
         if normalized.get("authorization") != "Bearer " + self.policy["placeholder"]:
             raise PolicyError("Expected public placeholder is missing")
-        if any(k in normalized for k in ("api-key", "x-api-key", "cookie")):
+        if any(k in normalized for k in ("api-key", "x-api-key", "cookie", "proxy-authorization")):
             raise PolicyError("Additional authentication rejected")
         forward = routes[0].get("forward-host")
         return urllib.parse.urlunsplit(
@@ -121,6 +146,43 @@ class Guard:
 
         urllib.request.OpenerDirector.open = guarded_open
         urllib.request.HTTPRedirectHandler.redirect_request = no_redirect
+        # Google API clients use httplib2, which otherwise needs an optional
+        # SOCKS package even for an HTTP CONNECT proxy and does not use the
+        # process-local CA settings. Keep its SDK request/response protocol, but
+        # send reviewed requests through the same guarded urllib TLS transport.
+        try:
+            import httplib2
+        except ImportError:
+            pass
+        else:
+            def guarded_httplib2_request(
+                client, uri, method="GET", body=None, headers=None,
+                redirections=5, connection_type=None,
+            ):
+                if connection_type is not None:
+                    raise PolicyError("Custom Google API connections are unsupported")
+                data = body.encode("utf-8") if isinstance(body, str) else body
+                request = urllib.request.Request(
+                    uri, data=data, headers=headers or {}, method=method
+                )
+                # This calls guarded_open, including its redirect rejection,
+                # sanitized errors and failure latch. No disk cache is used.
+                with urllib.request.urlopen(request, timeout=30) as response:
+                    content = response.read(64 * 1024 * 1024 + 1)
+                    if len(content) > 64 * 1024 * 1024:
+                        guard.failed = True
+                        raise PolicyError("Google API response exceeds size limit")
+                    try:
+                        content, metadata = decoded_response(
+                            content, dict(response.headers.items())
+                        )
+                    except PolicyError:
+                        guard.failed = True
+                        raise
+                    metadata["status"] = str(response.status)
+                    return httplib2.Response(metadata), content
+
+            httplib2.Http.request = guarded_httplib2_request
         try:
             import requests
         except ImportError:

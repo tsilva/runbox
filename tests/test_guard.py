@@ -78,6 +78,7 @@ class GuardTests(unittest.TestCase):
                 {"Authorization": "Bearer synthetic-other-key"},
             ),
             ("GET", policy["base-url"] + "/models", {**headers, "Cookie": "synthetic"}),
+            ("GET", policy["base-url"] + "/models", {**headers, "Proxy-Authorization": "synthetic"}),
             (
                 "GET",
                 policy["base-url"] + "/models",

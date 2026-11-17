@@ -123,6 +123,31 @@ class ConfigTests(unittest.TestCase):
             with self.assertRaises(Error):
                 load(path)
 
+    def test_gmail_broker_metadata_is_not_runnable_and_requires_its_named_consumer(self):
+        broker = {"provider": "gmail-user-oauth", "consumer-profile": "gmail", "infisical": {}, "gmail": {}}
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / ".runbox.yaml"
+            value = {"version": 1, "brokers": {"example-gmail": broker}}
+            path.write_text(json.dumps(value))
+            self.assertNotIn("profiles", load(path))
+            del broker["consumer-profile"]
+            path.write_text(json.dumps(value))
+            with self.assertRaises(Error):
+                load(path)
+
+    def test_native_vercel_broker_metadata_requires_explicit_consumer(self):
+        broker = {"provider": "vercel-cli-oauth", "consumer-profile": "vercel",
+                  "infisical": {}, "vercel": {}}
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / ".runbox.yaml"
+            value = {"version": 1, "brokers": {"example-vercel": broker}}
+            path.write_text(json.dumps(value))
+            self.assertNotIn("profiles", load(path))
+            del broker["consumer-profile"]
+            path.write_text(json.dumps(value))
+            with self.assertRaises(Error):
+                load(path)
+
     def test_python_root_source_and_explicit_readiness_alias(self):
         value = copy.deepcopy(PROFILE)
         value["execution"]["python"]["source"] = "."

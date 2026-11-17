@@ -3,13 +3,37 @@
 import re
 import uuid
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlsplit
 
 import yaml
 
 
 class Error(ValueError):
     """Safe operator-facing error; never include untrusted input."""
+
+
+def query_matches(route, query):
+    """Match either an exact query or a reviewed, bounded GET parameter schema."""
+    if "query-parameters" not in route:
+        return query in route.get("queries", [""])
+    if len(query) > 4096 or re.search(r"%(?![0-9A-Fa-f]{2})", query):
+        return False
+    try:
+        pairs = parse_qsl(query, keep_blank_values=True, strict_parsing=True,
+                          encoding="utf-8", errors="strict", max_num_fields=32)
+    except (ValueError, UnicodeError):
+        return False
+    policy = route["query-parameters"]
+    values = dict(pairs)
+    return (
+        len(values) == len(pairs)
+        and values.keys() <= policy.keys()
+        and all(not rule.get("required", False) or name in values
+                for name, rule in policy.items())
+        and all(len(value) <= 2048 and not any(c in value for c in "\r\n\0")
+                and re.fullmatch(policy[name]["pattern"], value) is not None
+                for name, value in values.items())
+    )
 
 
 def retired_configs(root):
@@ -372,6 +396,7 @@ def profile(value):
                 (
                     "forward-host",
                     "queries",
+                    "query-parameters",
                     "origin",
                     "credential-header",
                     "placeholder",
@@ -445,6 +470,25 @@ def profile(value):
                 "Invalid route template",
             )
             queries = route.get("queries", [""])
+            if "query-parameters" in route:
+                parameters = route["query-parameters"]
+                require(
+                    "queries" not in route and route["method"] == "GET"
+                    and execution.get("client", {}).get("type") == "python"
+                    and type(parameters) is dict and 0 < len(parameters) <= 16,
+                    "Query parameters require a reviewed Python GET route",
+                )
+                for name, rule in parameters.items():
+                    require(isinstance(name, str) and re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,63}", name),
+                            "Invalid query parameter name")
+                    fields(rule, ("pattern",), ("required",))
+                    require(isinstance(rule["pattern"], str) and 0 < len(rule["pattern"]) <= 512
+                            and type(rule.get("required", False)) is bool,
+                            "Invalid query parameter rule")
+                    try:
+                        re.compile(rule["pattern"])
+                    except re.error:
+                        raise Error("Invalid query parameter pattern") from None
             require(
                 type(queries) is list
                 and queries
@@ -471,7 +515,7 @@ def profile(value):
                 route["method"] == "GET"
                 and route["path"] == http["probe"]
                 and "origin" not in route
-                and query in route.get("queries", [""])
+                and query_matches(route, query)
                 for route in routes
             ),
             "Online probe query must match its exact GET allowlist",
@@ -499,7 +543,7 @@ def profile(value):
                     route["method"] == "GET"
                     and route["path"] == path
                     and "origin" not in route
-                    and "" in route.get("queries", [""])
+                    and query_matches(route, "")
                     for route in routes
                 ),
                 "Additional verification must use an existing exact GET route",
@@ -659,6 +703,8 @@ def load(path):
                     "gcp-impersonation",
                     "gcloud-impersonation",
                     "github-app-installation",
+                    "gmail-user-oauth",
+                    "vercel-cli-oauth",
                 ),
                 "Unsupported renewal broker provider",
             )
@@ -669,7 +715,9 @@ def load(path):
                     "infisical",
                     "github"
                     if broker["provider"] == "github-app-installation"
-                    else "google",
+                    else "gmail" if broker["provider"] == "gmail-user-oauth"
+                    else "vercel" if broker["provider"] == "vercel-cli-oauth" else "google",
+                    *(("consumer-profile",) if broker["provider"] in ("gmail-user-oauth", "vercel-cli-oauth") else ()),
                 ),
                 ("proxy",),
             )

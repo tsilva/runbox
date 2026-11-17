@@ -60,6 +60,23 @@ The public argv begins with the declared logical command. Read-only checks can u
 `client.probe-arguments` or an HTTP `client.probe` with `checks`, optional `count`
 and `format: json|status`. Status-only probes require no response assertions.
 
+With an HTTP policy, the Python guard also adapts installed Google API
+`httplib2` requests to its verified urllib CONNECT/TLS transport. It retains the
+SDK response protocol without disk caching or the optional SOCKS dependency.
+Redirects, extra authentication headers and requests after a failure are rejected;
+wire and decoded responses are each bounded to 64 MiB. Gzip and deflate responses
+are decompressed for the SDK; invalid, oversized or unsupported encodings stop
+the session. Consumer code must explicitly select finite
+access-token credentials and avoid local OAuth refresh or credential discovery.
+
+Python GET routes may declare `query-parameters` instead of an exact `queries`
+list. Each named parameter has a full-match `pattern` and optional boolean
+`required`. Unknown or duplicate names, malformed encoding, control characters,
+more than 32 fields, queries over 4096 characters and values over 2048 characters
+are rejected. Keep patterns narrow to the selected operation and account. The
+fixed `probe-query` must satisfy the same schema. Other methods and client types
+retain exact query lists; existing route semantics are unchanged.
+
 Shared Node resources support guarded HTTP clients, Sentry readers and Next app
 startup. `execution.preloads` lists pinned domain transport modules; generic
 bootstrap and process lifecycle stay in Runbox. `client.type: node-next` supports
