@@ -106,7 +106,7 @@ Keep the runtime JSON outside the checkout and owner-only. Required fields are
 | `node` | Executable hash |
 | `binaries: {name: path}` | Named executable hashes |
 | `files: {name: {path, private?}}` | Canonical file hashes and required ownership/permissions |
-| `directories: {name: {path, private?}}` | Canonical directory identity, owner and mode; dynamic contents are not hashed |
+| `directories: {name: {path, private?, integrity?}}` | Canonical directory identity, owner and mode; opt-in complete tree hash for private SDKs |
 | `imports: [path]` | Approved Python dependency roots and directory identities |
 | `integrity-files: [path]` | Explicit external SDK or installed-program file hashes |
 | `path: [directory]` | Reviewed canonical directories prepended to child PATH; contents are not implicitly attested |
@@ -114,6 +114,14 @@ Keep the runtime JSON outside the checkout and owner-only. Required fields are
 Named files, directories and binaries provide `{name}` substitutions; reserved
 names and collisions are rejected. `macos-staging` also requires `venv`, with
 `python` at `VENV/bin/python` resolving into `python-root`.
+
+Set `private: true` and `integrity: true` for a dedicated immutable SDK
+directory. Runbox checks every file and directory, including additions,
+removals, modes, and file contents. Symlinks, nonregular files, and entries
+accessible to other users are rejected. A runtime may pin up to four trees,
+each bounded to 16,384 entries and 512 MiB. Keep caches, generated files and
+writable application state outside these SDK directories. Directory entries
+without `integrity: true` continue to pin the directory identity only.
 
 Owner-only approvals under `~/.config/runbox/approvals` bind the canonical root,
 profile, complete YAML, selected source files, runtime, CA, archive, policy and

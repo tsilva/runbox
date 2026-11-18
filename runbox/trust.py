@@ -155,6 +155,7 @@ def runtime_pins(runtime, sandbox):
         for key in paths
     }
     names = set()
+    integrity_trees = 0
     for inventory in ("binaries", "files", "directories"):
         entries = runtime.get(inventory, {})
         require(
@@ -197,14 +198,32 @@ def runtime_pins(runtime, sandbox):
                 "Reserved runtime substitution",
             )
             if inventory == "binaries":
-                path, private = entry, False
+                path, private, integrity = entry, False, False
             else:
-                fields(entry, ("path",), ("private",))
+                optional = (
+                    ("private", "integrity")
+                    if inventory == "directories"
+                    else ("private",)
+                )
+                fields(entry, ("path",), optional)
                 path, private = entry["path"], entry.get("private", False)
                 require(type(private) is bool, "Invalid runtime privacy requirement")
+                integrity = entry.get("integrity", False)
+                require(
+                    type(integrity) is bool,
+                    "Invalid runtime directory integrity policy",
+                )
             require(isinstance(path, str), "Invalid runtime path")
             if inventory == "directories":
-                pins["directory:" + name] = runtime_directory(Path(path), private)
+                recorded = runtime_directory(Path(path), private)
+                if integrity:
+                    integrity_trees += 1
+                    require(
+                        private and integrity_trees <= 4,
+                        "Runtime tree pins require up to four private directories",
+                    )
+                    recorded["tree-sha256"] = runtime_tree_digest(Path(path))
+                pins["directory:" + name] = recorded
             else:
                 pins[inventory + ":" + name] = digest(
                     regular(Path(path), private=private, system=not private)
@@ -256,6 +275,31 @@ def runtime_directory(path, private=False):
         "Unsafe runtime directory",
     )
     return {"path": str(path), "owner": info.st_uid, "mode": stat.S_IMODE(info.st_mode)}
+
+
+def runtime_tree_digest(root):
+    """Pin complete owner-only SDK contents, including additions and modes."""
+    directories, entries, total = [root], [], 0
+    while directories:
+        folder = directories.pop()
+        runtime_directory(folder, private=True)
+        for path in folder.iterdir():
+            require(len(entries) < 16384, "Runtime directory has too many entries")
+            info = path.lstat()
+            mode = stat.S_IMODE(info.st_mode)
+            name = path.relative_to(root).as_posix()
+            if stat.S_ISDIR(info.st_mode):
+                directories.append(path)
+                entries.append((name, "directory", mode, ""))
+            else:
+                regular(path, private=True)
+                total += info.st_size
+                require(total <= 512 * 1024**2, "Runtime directory is too large")
+                with path.open("rb") as stream:
+                    sha = hashlib.file_digest(stream, "sha256").hexdigest()
+                entries.append((name, "file", mode, sha))
+    canonical = json.dumps(sorted(entries), separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 def snapshot(root, name, profile, runtime, archive):
