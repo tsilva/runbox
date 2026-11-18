@@ -41,7 +41,7 @@ def main(arguments):
     payload = json.loads(base64.urlsafe_b64decode(os.environ["RUNBOX_POLICY"]))
     profile, runtime = payload["profile"], payload["runtime"]
     client = profile["execution"]["client"]
-    require(client["type"] == "python", "Expected the reviewed Python client")
+    require(client["type"] in ("python", "http-json", "s3-head"), "Expected the reviewed Python client")
     environment(profile, runtime, payload["home"])
     sys.pycache_prefix = "/dev/null"
     # External dependency roots are separately approved, with selected SDK
@@ -49,6 +49,17 @@ def main(arguments):
     sys.path[:0] = runtime.get("imports", [])
     if "http" in profile:
         Guard(profile["http"]).install()
+    if client["type"] == "s3-head":
+        from .s3_probe import execute
+
+        print(json.dumps(execute(client, profile["environment"], arguments)))
+        return 0
+    if client["type"] == "http-json":
+        require(payload["mode"] == "run" and "http" in profile,
+                "HTTP JSON executors require a guarded run and a separate read-only probe")
+        from .http_json import main as http_json
+
+        return http_json(profile, arguments)
     result = {"ok": True, "read_only": True, "credential_mode": "public-placeholder"}
     identity = "probe" in client and (
         payload["mode"] == "probe" or not {"script", "entrypoint"} & set(client)

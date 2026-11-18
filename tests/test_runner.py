@@ -34,12 +34,17 @@ class RunnerTests(unittest.TestCase):
             ),
             "Online check failed (HTTP 401); provider diagnostics withheld",
         )
+        self.assertEqual(
+            probe_failure(b"", b"runbox: Service request failed (HTTP 502; S3 stage upstream-tls); details withheld"),
+            "Online check failed at S3 upstream-tls (HTTP 502); provider diagnostics withheld",
+        )
         for stdout, stderr in (
             (b'{"ok":false,"stage":"private-secret"}', b""),
             (b'{"ok":false,"stage":[]}', b""),
             (b'{"probe_error":"private-secret"}', b""),
             (b'{"probe_error":"connection_failed","extra":"secret"}', b""),
             (b"", b"private HTTP 401 body secret"),
+            (b"", b"runbox: Service request failed (HTTP 502; S3 stage private-secret); details withheld"),
             (
                 b"",
                 b"runbox: Service request failed (HTTP 401); details withheld secret",

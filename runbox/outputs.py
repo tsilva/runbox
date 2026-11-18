@@ -66,7 +66,13 @@ def validate(outputs):
             "Invalid output command prefix",
         )
         require(
-            rule["kind"] in ("new-file", "empty-directory", "existing-directory"),
+            rule["kind"]
+            in (
+                "new-file",
+                "empty-directory",
+                "existing-directory",
+                "working-directory",
+            ),
             "Unsupported output target kind",
         )
         if "within" in rule:
@@ -76,7 +82,8 @@ def validate(outputs):
             "Invalid output path base",
         )
         require(
-            rule["kind"] != "existing-directory" or "within" in rule,
+            rule["kind"] not in ("existing-directory", "working-directory")
+            or "within" in rule,
             "Existing outputs require a narrowed repository subtree",
         )
         separate = rule["separate-from"]
@@ -144,13 +151,14 @@ def select(root, execution, arguments, inputs=None):
             "Output directory must already exist without symlinks",
         )
         info = directory.stat()
+        private = rule["kind"] != "working-directory"
         require(
             stat.S_ISDIR(info.st_mode)
             and info.st_uid == os.getuid()
-            and not info.st_mode & 0o077,
-            "Output directory must be owner-only",
+            and not info.st_mode & (0o077 if private else 0o022),
+            "Output directory permissions do not match its reviewed kind",
         )
-        if rule["kind"] != "existing-directory":
+        if rule["kind"] not in ("existing-directory", "working-directory"):
             require(not any(directory.iterdir()), "Output directory must be empty")
         if "within" in rule:
             allowed = root / rule["within"]

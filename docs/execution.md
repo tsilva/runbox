@@ -68,10 +68,69 @@ wire and decoded responses are each bounded to 64 MiB. Gzip and deflate response
 are decompressed for the SDK; invalid, oversized or unsupported encodings stop
 the session. Consumer code must explicitly select finite
 access-token credentials and avoid local OAuth refresh or credential discovery.
+Installed HTTPX and HTTPX2 clients share the same synchronous and asynchronous
+route, placeholder, redirect, sanitized-error and failure-latch checks. This
+does not authorize native Xet or off-host presigned upload transports.
+
+`client: {type: s3-head, targets: [...]}` provides a shared bucket-only check
+without repository probe scripts. Each of one to four targets declares a `bucket`
+and the public environment selectors `endpoint-variable`, `access-variable` and
+`secret-variable`. Endpoints must be explicit HTTP loopback signers at
+`127.0.0.1` on unprivileged ports; both credential values must be placeholders.
+The approved runtime supplies Boto3/Botocore. Every target is validated before
+SDK construction. The checker uses explicit credentials, path-style SigV4, one
+HEAD per bucket, bounded timeouts and no retry, then closes each client. It
+accepts no arguments and returns only a success flag and bucket count. Failures
+may report a validated integer HTTP status and a closed failure stage from the
+reviewed signer. SDK messages, arbitrary headers and provider bodies remain
+withheld. A validated non-success upstream status can clarify an adapter's generic
+failure; it never makes the probe successful or enables redirects. The checker
+does not list objects, fetch contents, refresh credentials or qualify
+write transport.
+Use it as a separate fixed probe execution with the same reviewed session and
+required sandbox. Native routes and separately reviewed trusted signers still
+enforce their own destinations and operations; this checker grants no access.
+
+`client: {type: http-json}` runs one guarded JSON API request with the built-in
+transport. It uses the same Python `--command-child` vector, requires an
+HTTP policy, accepts no command arguments, and needs a separate read-only probe.
+Stdin is a JSON object with `method: GET|POST`, absolute `url`, optional JSON
+`body` and optional public `context`. Requests are limited to 4 MiB; GET bodies,
+extra fields, duplicate JSON keys, non-finite numbers and redirects are rejected.
+The response is one `{status: INTEGER, body: OBJECT_OR_ARRAY}` JSON record bounded
+to 16 MiB. Authentication comes only from the profile's public placeholder;
+request input cannot supply headers or credentials. Failures return a fixed safe
+error without provider details. An optional `HTTP_EXECUTOR_CONTEXT` public JSON
+environment setting must match the request context exactly, including value types.
+Use it to compare application account selectors with reviewed profile metadata.
+
+Optional `client.validator: module:function` selects an integrity-pinned ordinary
+consumer policy. It runs under the selected sandbox after the HTTP guard is
+installed, before forwarding the original request. The function receives a copy
+of the parsed request, a guarded GET callback (at most four reads), and public
+profile environment data. It returns `None` or raises. Request mutations are not
+forwarded. The separately privileged renewal broker never imports this code.
+Use these policies for domain rules such as generated tabs or manual-column
+protection that native host/method/path scopes cannot express.
+
+For related writes, `{requests: [...], context: {...}}` submits up to three
+ordered POST requests with the same method/URL/body shape. A pinned validator is
+required. Every member's route and the complete domain plan are checked before
+the first write. Success returns `{status: 200, body: {responses: [...]}}`.
+This is preflight validation, not an upstream transaction: any execution failure
+stops the sequence without retry or fallback, and earlier writes may have applied.
+
+Applications may select this executor through an explicit neutral executable
+input. A registered shared command link can dispatch GET to an approved read
+profile and other requests to a separately approved write profile. The HTTP
+policy still decides whether a request is admitted. This keeps public collection
+outside credential sessions and creates no ordinary-command Runbox dependency.
 
 Python GET routes may declare `query-parameters` instead of an exact `queries`
 list. Each named parameter has a full-match `pattern` and optional boolean
-`required`. Unknown or duplicate names, malformed encoding, control characters,
+`required`. Duplicate names are rejected unless that specific parameter declares
+an integer `max-count` from 1 to 16; every repeated value must match its pattern.
+Unknown names, malformed encoding, control characters,
 more than 32 fields, queries over 4096 characters and values over 2048 characters
 are rejected. Keep patterns narrow to the selected operation and account. The
 fixed `probe-query` must satisfy the same schema. Other methods and client types
@@ -95,11 +154,14 @@ Optional `path-template` derives a fixed repository-relative payload path from
 one safe named argument, for example `.internal/evidence/{argument}/manifest.json`.
 
 `outputs` similarly declares `argument`, `when-prefix`, `kind`, `separate-from`
-and `exclude`. Kinds are `new-file`, `empty-directory` or `existing-directory`. The existing target
-directory must be empty and owner-only, outside protected paths and separate from
-selected input parents. `existing-directory` additionally requires a strict child
-of a declared repository-relative `within` subtree; `relative-to: repo` accepts
-a relative public argument. The selector creates/deletes nothing. Its substitutions
+and `exclude`. `new-file` and `empty-directory` require an empty owner-only
+directory; `existing-directory` permits a nonempty owner-only directory.
+`working-directory` selects existing ordinary application data owned by the user
+and rejects group/other write access; it preserves the folder's existing mode.
+Both existing-directory kinds require a strict child of a declared
+repository-relative `within` subtree. Protected-path exclusions and separation
+from declared input parents still apply; `relative-to: repo` accepts a relative
+public argument. The selector creates/deletes nothing. Its substitutions
 and `NAME-parent` may appear only in read/write permissions. Nonmatching selectors
 use a no-access `/dev/null` sentinel. Exact selected-output read rules follow
 parent-directory denials, while credential filename denials remain final. Input

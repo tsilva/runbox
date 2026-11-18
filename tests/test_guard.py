@@ -9,6 +9,64 @@ from tests.support import PROFILE
 
 
 class GuardTests(unittest.TestCase):
+    def test_installed_httpx_variants_keep_sync_and_async_restrictions(self):
+        import importlib.util
+
+        libraries = [name for name in ("httpx", "httpx2")
+                     if importlib.util.find_spec(name) is not None]
+        if not libraries:
+            self.skipTest("Requires a reviewed HTTPX runtime")
+        code = """
+import asyncio, importlib, os, sys
+from runbox.guard import Guard, PolicyError
+from tests.support import PROFILE
+httpx = importlib.import_module(sys.argv[1])
+os.environ.update(PROFILE['environment'])
+calls = []
+def send(client, request, **kwargs):
+    calls.append(str(request.url))
+    assert kwargs['follow_redirects'] is False
+    return httpx.Response(200, json={'ok': True}, request=request)
+async def async_send(client, request, **kwargs):
+    assert kwargs['follow_redirects'] is False
+    return httpx.Response(401, text='synthetic-private-provider-key', request=request)
+httpx.Client.send, httpx.AsyncClient.send = send, async_send
+guard = Guard(PROFILE['http'])
+guard.install()
+target = PROFILE['http']['base-url'] + '/models'
+headers = {'Authorization': 'Bearer ' + PROFILE['http']['placeholder']}
+with httpx.Client(trust_env=False) as client:
+    assert client.get(target, headers=headers).json() == {'ok': True}
+    try:
+        client.get(target, headers={})
+    except PolicyError:
+        pass
+    else:
+        raise AssertionError('Missing placeholder accepted')
+assert len(calls) == 1
+async def check():
+    async with httpx.AsyncClient(trust_env=False) as client:
+        for _ in range(2):
+            try:
+                await client.get(target, headers=headers)
+            except PolicyError as error:
+                assert 'synthetic-private' not in str(error)
+            else:
+                raise AssertionError('Provider rejection accepted')
+asyncio.run(check())
+assert guard.failed
+print('sync and async guarded')
+"""
+        for library in libraries:
+            with self.subTest(library=library):
+                result = subprocess.run(
+                    [sys.executable, "-B", "-c", code, library],
+                    cwd=Path(__file__).resolve().parents[1],
+                    capture_output=True, text=True, timeout=20, check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.strip(), "sync and async guarded")
+
     def test_exact_queries_are_preserved_and_unreviewed_queries_rejected(self):
         from copy import deepcopy
 

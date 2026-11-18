@@ -60,6 +60,15 @@ def probe_failure(stdout, stderr):
                     + "; provider diagnostics withheld"
                 )
     for line in stderr.decode(errors="replace").splitlines():
+        s3 = re.fullmatch(
+            r"runbox: Service request failed \(HTTP ([1-5][0-9]{2}); S3 stage ([a-z-]+)\); details withheld",
+            line,
+        )
+        if s3:
+            from .s3_probe import FAILURE_STAGES
+
+            if s3[2] in FAILURE_STAGES:
+                return f"Online check failed at S3 {s3[2]} (HTTP {s3[1]}); provider diagnostics withheld"
         status = re.fullmatch(
             r"runbox: Service request failed \(HTTP ([1-5][0-9]{2})\); details withheld",
             line,

@@ -21,6 +21,54 @@ def execution(excluded=()):
 
 
 class OutputTests(unittest.TestCase):
+    def working(self, kind="working-directory"):
+        rule = execution()
+        rule["outputs"]["result"].update(
+            {"kind": kind, "within": "runs", "relative-to": "repo", "separate-from": []}
+        )
+        return rule
+
+    def test_working_directory_preserves_owned_nonempty_755_folder(self):
+        target = self.root / "runs/example"
+        target.mkdir(parents=True, mode=0o755)
+        target.chmod(0o755)
+        receipt = target / "receipt.json"
+        receipt.write_text("preserved")
+        result = self.selected(Path("runs/example"), self.working())
+        self.assertEqual(result["result"], str(target))
+        self.assertEqual(target.stat().st_mode & 0o777, 0o755)
+        self.assertEqual(receipt.read_text(), "preserved")
+        with self.assertRaises(Error):
+            self.selected(target, self.working("existing-directory"))
+
+    def test_working_directory_still_requires_narrowed_canonical_unshared_target(self):
+        target = self.root / "runs/example"
+        target.mkdir(parents=True, mode=0o755)
+        for mode in (0o775, 0o777):
+            target.chmod(mode)
+            with self.assertRaises(Error):
+                self.selected(target, self.working())
+            self.assertEqual(target.stat().st_mode & 0o777, mode)
+        target.chmod(0o755)
+        linked = self.root / "runs/link"
+        linked.symlink_to(target, target_is_directory=True)
+        for path in (
+            self.root / "runs",
+            self.output,
+            linked,
+            self.root / "runs/missing",
+        ):
+            with self.subTest(path=path), self.assertRaises(Error):
+                self.selected(path, self.working())
+        rule = self.working()
+        del rule["outputs"]["result"]["within"]
+        with self.assertRaises(Error):
+            validate(rule["outputs"])
+        rule = self.working()
+        rule["outputs"]["result"]["exclude"] = [str(self.root / "runs")]
+        with self.assertRaises(Error):
+            self.selected(target, rule)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

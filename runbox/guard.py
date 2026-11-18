@@ -209,11 +209,7 @@ class Guard:
                     ) from None
 
             requests.Session.send = guarded_requests_send
-        try:
-            import httpx
-        except ImportError:
-            httpx = None
-        if httpx:
+        def install_httpx(httpx):
             send, async_send = httpx.Client.send, httpx.AsyncClient.send
 
             def guarded_send(client, request, **kwargs):
@@ -253,6 +249,17 @@ class Guard:
                     ) from None
 
             httpx.Client.send, httpx.AsyncClient.send = guarded_send, guarded_async_send
+
+        installed_httpx = set()
+        for module_name in ("httpx", "httpx2"):
+            try:
+                httpx = __import__(module_name)
+            except ImportError:
+                continue
+            identity = (httpx.Client, httpx.AsyncClient)
+            if identity not in installed_httpx:
+                install_httpx(httpx)
+                installed_httpx.add(identity)
         try:
             import openai
         except ImportError:

@@ -63,6 +63,14 @@ does not approve the source or make a command runnable.
 and `vercel`. Its separately reviewed broker owns native CLI OAuth renewal;
 declaring the metadata grants no runnable access or automatic renewal.
 
+Repository `gcp-impersonation` definitions can likewise select an explicit
+`consumer-profile` alongside `infisical` and `google`. This form uses a dedicated
+Agent Vault destination and matching named source binding; the broker checks the
+consumer HTTP origin, placeholder and routes against that destination. It permits
+explicitly reviewed GET/POST Google API scopes, retaining the 600–900 second leaf
+lifetime. Legacy Google definitions keep their original closed read-only schema.
+Neither form authorizes borrowing or widening another profile's source or grant.
+
 ## Session and public environment
 
 `session` requires a loopback `proxy` and bounded `ttl` between `1m` and `8h`.

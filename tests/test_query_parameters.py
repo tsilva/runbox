@@ -8,6 +8,20 @@ from tests.test_independent_probes import selected
 
 
 class QueryParameterTests(unittest.TestCase):
+    def test_repeated_fields_require_explicit_bounded_count_and_each_value_is_checked(self):
+        value = self.policy()
+        route = value["probe"]["http"]["routes"][0]
+        route["query-parameters"]["ranges"] = {"pattern": "Watchlist![A-Z0-9:]{1,32}", "max-count": 2}
+        profile(value)
+        self.assertTrue(query_matches(route, "alt=json&ranges=Watchlist!A1:B2&ranges=Watchlist!C1:D2"))
+        self.assertFalse(query_matches(route, "alt=json&ranges=Watchlist!A1:B2&ranges=Private!C1:D2"))
+        self.assertFalse(query_matches(route, "alt=json&ranges=Watchlist!A1&ranges=Watchlist!B1&ranges=Watchlist!C1"))
+        self.assertFalse(query_matches(route, "alt=json&alt=json"))
+        for count in (0, 17, True, "2"):
+            route["query-parameters"]["ranges"]["max-count"] = count
+            with self.subTest(count=count), self.assertRaises(Error):
+                profile(value)
+
     def policy(self):
         value = selected()
         http = value["probe"]["http"]

@@ -2,6 +2,7 @@
 
 import re
 import uuid
+from collections import Counter
 from pathlib import Path
 from urllib.parse import parse_qsl, urlsplit
 
@@ -25,14 +26,15 @@ def query_matches(route, query):
         return False
     policy = route["query-parameters"]
     values = dict(pairs)
+    counts = Counter(name for name, _ in pairs)
     return (
-        len(values) == len(pairs)
-        and values.keys() <= policy.keys()
+        values.keys() <= policy.keys()
+        and all(count <= policy[name].get("max-count", 1) for name, count in counts.items())
         and all(not rule.get("required", False) or name in values
                 for name, rule in policy.items())
         and all(len(value) <= 2048 and not any(c in value for c in "\r\n\0")
                 and re.fullmatch(policy[name]["pattern"], value) is not None
-                for name, value in values.items())
+                for name, value in pairs)
     )
 
 
@@ -348,6 +350,12 @@ def profile(value):
         from .sandbox import validate
 
         validate(execution)
+        if execution.get("client", {}).get("type") == "s3-head":
+            from .s3_probe import select
+
+            require("http" not in value,
+                    "S3 checks use their reviewed signer rather than a bearer HTTP policy")
+            select(execution["client"], env)
         require(
             execution.get("client", {}).get("type") != "node-http" or "http" in value,
             "Shared Node HTTP clients require an explicit HTTP policy",
@@ -357,6 +365,10 @@ def profile(value):
             or "probe" not in execution["client"]
             or "http" in value,
             "Shared Python identity checks require an explicit HTTP policy",
+        )
+        require(
+            execution.get("client", {}).get("type") != "http-json" or "http" in value,
+            "HTTP JSON executors require an explicit guarded HTTP policy",
         )
     else:
         raise Error("Unsupported sandbox backend")
@@ -474,16 +486,18 @@ def profile(value):
                 parameters = route["query-parameters"]
                 require(
                     "queries" not in route and route["method"] == "GET"
-                    and execution.get("client", {}).get("type") == "python"
+                    and execution.get("client", {}).get("type") in ("python", "http-json")
                     and type(parameters) is dict and 0 < len(parameters) <= 16,
                     "Query parameters require a reviewed Python GET route",
                 )
                 for name, rule in parameters.items():
                     require(isinstance(name, str) and re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,63}", name),
                             "Invalid query parameter name")
-                    fields(rule, ("pattern",), ("required",))
+                    fields(rule, ("pattern",), ("required", "max-count"))
                     require(isinstance(rule["pattern"], str) and 0 < len(rule["pattern"]) <= 512
-                            and type(rule.get("required", False)) is bool,
+                            and type(rule.get("required", False)) is bool
+                            and type(rule.get("max-count", 1)) is int
+                            and 1 <= rule.get("max-count", 1) <= 16,
                             "Invalid query parameter rule")
                     try:
                         re.compile(rule["pattern"])
@@ -719,7 +733,7 @@ def load(path):
                     else "vercel" if broker["provider"] == "vercel-cli-oauth" else "google",
                     *(("consumer-profile",) if broker["provider"] in ("gmail-user-oauth", "vercel-cli-oauth") else ()),
                 ),
-                ("proxy",),
+                ("proxy", *(("consumer-profile",) if broker["provider"] == "gcp-impersonation" else ())),
             )
             # The privileged broker validates its full closed schema before credential access.
             require(type(broker["infisical"]) is dict, "Invalid broker source metadata")

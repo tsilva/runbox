@@ -228,12 +228,22 @@ def validate(execution):
                 "probe-arguments",
                 "root",
                 "tsconfig-variable",
+                "validator",
+                "targets",
             ),
         )
         require(
-            client["type"] in ("node-http", "node-next", "python"),
+            client["type"] in ("node-http", "node-next", "python", "http-json", "s3-head"),
             "Unsupported shared command client",
         )
+        require("validator" not in client or client["type"] == "http-json",
+                "Request validators require the shared HTTP JSON client")
+        require("targets" not in client or client["type"] == "s3-head",
+                "S3 targets require the shared bucket check")
+        if client["type"] == "s3-head":
+            from .s3_probe import validate as validate_s3
+
+            validate_s3(client)
         if client["type"] == "node-next":
             require(
                 set(client)
@@ -262,6 +272,13 @@ def validate(execution):
                 ),
                 "Invalid temporary configuration variable",
             )
+        if client["type"] == "http-json":
+            fields(client, ("type",), ("validator",))
+            if "validator" in client:
+                require(isinstance(client["validator"], str)
+                        and re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*:[A-Za-z_]\w*", client["validator"])
+                        and (integrity["files"] or integrity.get("directories")),
+                        "HTTP request validators require an integrity-pinned consumer entrypoint")
         if client["type"] == "python":
             require(
                 set(client)

@@ -55,6 +55,17 @@ Every configured profile has a bounded read-only online service check. Adding a
 check must preserve ordinary command behavior, scopes, required sandboxes and
 existing jobs; a write-capable command is verified without performing its writes.
 
+A declared working-directory target may update existing owner-controlled
+application data strictly beneath an approved repository subtree. Require
+canonical paths, ownership and no group/other write access; preserve its current
+mode. Existing private-output and read-only-input rules retain their defaults.
+
+Shared S3 checks may verify declared bucket access through separately reviewed
+loopback signing adapters with placeholder-only SDK credentials. They perform
+only fixed HEAD requests, never object listing, content reads, writes, source
+discovery or retries. Adapter scope, actual-client write compatibility and live
+activation remain separate verification requirements.
+
 ## Complete secret-access coverage
 
 Find remaining active secret-access usages across repositories and local agent
@@ -71,6 +82,11 @@ missing authorization remain explicit gaps; never hide them with raw credentials
 alternate logins or automatic trust renewal. Preserve separate trusted provisioning,
 renewal, Git authentication and managed SSH policies. Exclude archived repositories
 unless the owner currently authorizes a named archived operation.
+
+For workflows combining public collection and authenticated API calls, explicit
+neutral executors may isolate only those API calls in Runbox. Keep payloads in
+bounded pipes and enforce the selected account, routes and existing domain write
+boundaries before forwarding. Ordinary commands must not discover the executor.
 
 ## Renewable daemon sessions
 
