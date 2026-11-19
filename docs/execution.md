@@ -42,6 +42,10 @@ allows reviewed runtime/source reads, staging writes and proxy-only egress.
 - Optional `network`: existing reviewed `localhost:PORT` relays in addition to
   the native proxy. `listen: true` permits local listeners; alternatively
   `listen-ports: [PORT]` confines binding to reviewed loopback ports.
+- Optional `workspace-ipc: true` permits Unix socket binding and connections
+  inside the private staging home and sets `TMPDIR` there. This requires a
+  declared workspace and canonical, owner-only staging directories. Regular
+  filesystem and TCP permissions still apply independently.
 
 Paths expand from approved substitutions such as `{repo}`, `{release}`, `{home}`,
 `{workspace}`, `{python}`, `{node}`, `{ca-file}` and named runtime paths. Regex

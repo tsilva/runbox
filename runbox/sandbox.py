@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import stat
 import sys
 from pathlib import Path
 
@@ -145,7 +146,14 @@ def validate(execution):
             "permissions", {"read": [], "write": [], "execute": ["{python}"]}
         ),
         ("read", "write", "execute"),
-        ("deny-read", "network", "listen", "listen-ports", "deny-all-writes"),
+        (
+            "deny-read",
+            "network",
+            "listen",
+            "listen-ports",
+            "deny-all-writes",
+            "workspace-ipc",
+        ),
     )
     for key in ("read", "write", "deny-read"):
         rules = permissions.get(key, [])
@@ -178,6 +186,11 @@ def validate(execution):
     require(
         type(permissions.get("listen", False)) is bool,
         "Invalid loopback listener policy",
+    )
+    ipc = permissions.get("workspace-ipc", False)
+    require(
+        type(ipc) is bool and (not ipc or sandboxed and "workspace" in execution),
+        "Private Unix sockets require a macOS staging workspace",
     )
     ports = permissions.get("listen-ports", [])
     require(
@@ -467,6 +480,13 @@ def compile_policy(execution, values, proxy):
         lines.append(
             "(allow network-outbound (remote tcp " + json.dumps(endpoint) + "))"
         )
+    if permissions.get("workspace-ipc"):
+        address = json.dumps(str(workspace_ipc(values)))
+        lines += [
+            "(allow network-bind (local unix-socket (subpath " + address + ")))",
+            "(allow network-inbound (local unix-socket (subpath " + address + ")))",
+            "(allow network-outbound (remote unix-socket (subpath " + address + ")))",
+        ]
     if permissions.get("listen"):
         lines += [
             '(allow network-bind (local ip "localhost:*"))',
@@ -523,6 +543,23 @@ def compile_policy(execution, values, proxy):
         '(deny file-read-data (regex #"(^|/)[.]env($|[./])") (regex #"(^|/)([.]netrc|[.]access[.]local[.]toml)$"))'
     ]
     return "\n".join(lines)
+
+
+def workspace_ipc(values):
+    require("workspace" in values, "Private Unix sockets require a staging workspace")
+    workspace = Path(values["workspace"])
+    home = workspace / "home"
+    for path in (workspace, home):
+        require(
+            path.is_absolute() and path.resolve() == path and path.is_dir(),
+            "Invalid private Unix socket directory",
+        )
+        info = path.lstat()
+        require(
+            info.st_uid == os.getuid() and not stat.S_IMODE(info.st_mode) & 0o077,
+            "Unix socket directory must be owner-only",
+        )
+    return home
 
 
 def command(root, profile, runtime, archive, mode, arguments, workspace=None):
@@ -657,6 +694,8 @@ def command(root, profile, runtime, archive, mode, arguments, workspace=None):
             ).decode(),
         }
     )
+    if execution.get("permissions", {}).get("workspace-ipc"):
+        environment["TMPDIR"] = str(workspace_ipc(values))
     if "node" in runtime:
         environment["PATH"] = (
             str(Path(runtime["node"]).parent) + ":" + environment["PATH"]

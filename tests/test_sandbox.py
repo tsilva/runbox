@@ -40,6 +40,38 @@ def command_profile():
 
 
 class CommandPolicyTests(unittest.TestCase):
+    def test_workspace_ipc_requires_private_staging_for_unix_sockets(self):
+        value = command_profile()
+        execution = value["execution"]
+        execution["permissions"]["workspace-ipc"] = True
+        with self.assertRaisesRegex(Error, "require a macOS staging workspace"):
+            profile(value)
+        execution["workspace"] = ".internal/fixture"
+        profile(value)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            workspace = root / "workspace"
+            workspace.mkdir(mode=0o700)
+            home = workspace / "home"
+            home.mkdir(mode=0o700)
+            values = {
+                "repo": str(root),
+                "home": str(root),
+                "node": sys.executable,
+                "node-root": str(root),
+                "workspace": str(workspace),
+            }
+            policy = compile_policy(execution, values, "127.0.0.1:8283")
+            self.assertIn(f'(remote unix-socket (subpath "{home}"))', policy)
+            self.assertIn(f'(local unix-socket (subpath "{home}"))', policy)
+            home.chmod(0o755)
+            with self.assertRaisesRegex(Error, "must be owner-only"):
+                compile_policy(execution, values, "127.0.0.1:8283")
+            del execution["permissions"]["workspace-ipc"]
+            self.assertNotIn(
+                "unix-socket", compile_policy(execution, values, "127.0.0.1:8283")
+            )
+
     def test_next_http_guard_covers_probe_and_run_but_not_non_http_next(self):
         from runbox.sandbox import command
         from tests.support import fixture
