@@ -184,6 +184,7 @@ class Prepared:
         self.started = False
         self.worker_id = None
         self.forward = None
+        self.shared_forward = None
 
     def mark_started(self):
         # Called immediately before Popen, including an attempt that loses its acknowledgement.
@@ -209,21 +210,29 @@ class Prepared:
             result.returncode == 0,
             "Managed SSH forwarding unavailable; use its normal recovery policy",
         )
+        return result
 
     def open(self):
         session = self.profile["session"]
         validate(session)
         if "tunnel" in session:
             tunnel = session["tunnel"]
-            host, port = tunnel["local"].split(":")
-            try:
-                with socket.create_connection((host, int(port)), timeout=1):
-                    pass
-            except OSError:
-                self._ssh(["-O", "check", tunnel["host"]])
-                specification = tunnel["local"] + ":" + tunnel["remote"]
-                self._ssh(["-O", "forward", "-L", specification, tunnel["host"]])
-                self.forward = specification
+            if self.runtime.get("shared-tunnel", False):
+                from .tunnels import SharedForward
+
+                binary = self.runtime.get("binaries", {}).get("ssh")
+                require(binary, "The managed tunnel requires a pinned SSH executable")
+                self.shared_forward = SharedForward(tunnel, binary, self._ssh).open()
+            else:
+                host, port = tunnel["local"].split(":")
+                try:
+                    with socket.create_connection((host, int(port)), timeout=1):
+                        pass
+                except OSError:
+                    self._ssh(["-O", "check", tunnel["host"]])
+                    specification = tunnel["local"] + ":" + tunnel["remote"]
+                    self._ssh(["-O", "forward", "-L", specification, tunnel["host"]])
+                    self.forward = specification
         worker = session.get("worker")
         if worker and any(
             self.arguments[: len(prefix)] == prefix for prefix in worker["when"]
@@ -303,6 +312,8 @@ class Prepared:
                 failure = (
                     "Owned managed tunnel cleanup failed; check the managed connection"
                 )
+        if self.shared_forward is not None:
+            self.shared_forward.close()
         if failure:
             raise ValueError(failure)
 

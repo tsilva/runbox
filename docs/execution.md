@@ -194,9 +194,16 @@ verification. Mutable readiness state is not a credential store or source pin.
 `stderr: discard` suppresses private diagnostics for compatible fixed commands.
 Protocol clients retain their specific framing and sanitization requirements.
 
-An existing managed SSH master can serve an approved `session.tunnel`; Runbox
-checks it and creates/cancels only its own forwarding. It does not authenticate
-another master or repair SSH configuration. Optional `session.worker` creates a
+An existing managed SSH master can serve an approved `session.tunnel`. Runbox
+checks it and creates or cancels only its own forwarding. It does not authenticate
+another master or repair SSH configuration. Set `"shared-tunnel": true` in the
+reviewed local runtime for an endpoint reserved for Runbox callers with the same
+reviewed SSH alias, target and binary. Runbox tracks callers with owner-only locks and closes the forward
+when the last caller exits. An unrelated listener or a changed SSH master
+blocks reuse. If all callers are forcibly terminated, a surviving forward
+requires normal managed-SSH recovery before that endpoint can be reused.
+
+Optional `session.worker` creates a
 separately scoped, finite delegated session for explicit command prefixes. The
 capability travels only through validated environment fields. It is revoked if
 startup was never attempted; after admission may have been attempted, finite expiry

@@ -1,7 +1,10 @@
 import json
 import os
+import subprocess
+import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from unittest.mock import patch
 
 from runbox.config import Error
@@ -146,6 +149,92 @@ class SessionsTests(unittest.TestCase):
             ):
                 pass
             ssh.assert_not_called()
+
+    def configure_shared_forward(self):
+        self.runtime["shared-tunnel"] = True
+        self.profile["session"]["tunnel"] = {
+            "host": "beast-3",
+            "local": "127.0.0.1:28383",
+            "remote": "172.17.0.1:28383",
+        }
+
+    def test_shared_forward_survives_first_consumer_close_and_rejects_other_binding(self):
+        self.configure_shared_forward()
+        calls = []
+        owns_listener = False
+
+        def ssh(arguments):
+            nonlocal owns_listener
+            action = arguments[1]
+            calls.append(action)
+            if action == "forward":
+                owns_listener = True
+            elif action == "cancel":
+                owns_listener = False
+            return subprocess.CompletedProcess(arguments, 0, b"", b"Master running (pid=123)\r\n")
+
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch("runbox.tunnels.state", return_value=Path(directory).resolve()),
+            patch("runbox.tunnels.SharedForward.listening", side_effect=lambda: owns_listener),
+            patch.object(Prepared, "_ssh", side_effect=ssh),
+        ):
+            first = Prepared(self.profile, self.runtime, [])
+            second = Prepared(self.profile, self.runtime, [])
+            try:
+                first.open()
+                second.open()
+                conflict = json.loads(json.dumps(self.profile))
+                conflict["session"]["tunnel"]["remote"] = "172.17.0.2:28383"
+                with self.assertRaisesRegex(Error, "no longer matches"):
+                    Prepared(conflict, self.runtime, []).open()
+                first.close()
+                self.assertTrue(owns_listener)
+                self.assertNotIn("cancel", calls)
+                second.close()
+                self.assertFalse(owns_listener)
+                self.assertEqual(calls.count("forward"), 1)
+                self.assertEqual(calls.count("cancel"), 1)
+            finally:
+                first.close()
+                second.close()
+
+    def test_shared_forward_does_not_adopt_an_unowned_listener(self):
+        self.configure_shared_forward()
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch("runbox.tunnels.state", return_value=Path(directory).resolve()),
+            patch("runbox.tunnels.SharedForward.listening", return_value=True),
+            patch.object(Prepared, "_ssh") as ssh,
+        ):
+            with self.assertRaisesRegex(Error, "unowned listener"):
+                Prepared(self.profile, self.runtime, []).open()
+            ssh.assert_not_called()
+
+    def test_shared_forward_never_cancels_after_master_replacement(self):
+        self.configure_shared_forward()
+        actions = []
+        pid = 123
+        owns_listener = False
+
+        def ssh(arguments):
+            nonlocal owns_listener
+            actions.append(arguments[1])
+            if arguments[1] == "forward":
+                owns_listener = True
+            return subprocess.CompletedProcess(arguments, 0, b"", f"Master running (pid={pid})\n".encode())
+
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch("runbox.tunnels.state", return_value=Path(directory).resolve()),
+            patch("runbox.tunnels.SharedForward.listening", side_effect=lambda: owns_listener),
+            patch.object(Prepared, "_ssh", side_effect=ssh),
+        ):
+            session = Prepared(self.profile, self.runtime, []).open()
+            pid = 124
+            with self.assertRaisesRegex(Error, "master changed"):
+                session.close()
+            self.assertEqual(actions, ["check", "forward", "check"])
 
     def test_invalid_capability_response_is_revoked_without_echo(self):
         self.session["token"] = "not-native-secret"

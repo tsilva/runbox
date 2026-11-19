@@ -125,8 +125,10 @@ def runtime_pins(runtime, sandbox):
             "imports",
             "integrity-files",
             "path",
+            "shared-tunnel",
         ),
     )
+    require(type(runtime.get("shared-tunnel", False)) is bool, "Invalid shared tunnel setting")
     if sandbox == "macos-staging":
         require(
             set(("python", "python-root", "venv")) <= set(runtime),
@@ -303,6 +305,10 @@ def runtime_tree_digest(root):
 
 
 def snapshot(root, name, profile, runtime, archive):
+    require(
+        not runtime.get("shared-tunnel", False) or "tunnel" in profile.get("session", {}),
+        "Shared tunnels require a reviewed managed SSH route",
+    )
     require(
         not retired_configs(root),
         "Conflicting legacy/native configuration; finish explicit migration first",
