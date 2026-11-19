@@ -183,6 +183,30 @@ class RunnerTests(unittest.TestCase):
             ):
                 environment(PROFILE, runtime, "/staging/home")
 
+    def test_clean_child_keeps_only_the_reviewed_workspace_ipc_directory(self):
+        home = "/staging/home"
+        runtime = {"ca-file": "/public/ca.pem"}
+        incoming = {
+            **PROFILE["environment"],
+            "HTTP_PROXY": "http://synthetic:session@127.0.0.1:8283",
+            "TMPDIR": home,
+        }
+        with patch.dict(os.environ, incoming, clear=True):
+            environment(PROFILE, runtime, home)
+            self.assertNotIn("TMPDIR", os.environ)
+        ipc = {
+            **PROFILE,
+            "execution": {"permissions": {"workspace-ipc": True}},
+        }
+        with patch.dict(os.environ, incoming, clear=True):
+            environment(ipc, runtime, home)
+            self.assertEqual(os.environ["TMPDIR"], home)
+        with (
+            patch.dict(os.environ, {**incoming, "TMPDIR": "/tmp"}, clear=True),
+            self.assertRaisesRegex(Error, "reviewed private Unix socket directory"),
+        ):
+            environment(ipc, runtime, home)
+
     def test_entrypoint_preserves_return_value_and_system_exit(self):
         from types import SimpleNamespace
 

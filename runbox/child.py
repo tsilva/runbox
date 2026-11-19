@@ -75,6 +75,12 @@ def environment(profile, runtime, home):
         "INFISICAL_AGENT_VAULT_URL": instance,
         **delegated,
     }
+    if profile.get("execution", {}).get("permissions", {}).get("workspace-ipc"):
+        require(
+            os.environ.get("TMPDIR") == home and result.get("TMPDIR", home) == home,
+            "Expected the reviewed private Unix socket directory",
+        )
+        result["TMPDIR"] = home
     for key, value in profile["environment"].items():
         require(
             os.environ.get(key) == value,
