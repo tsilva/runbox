@@ -152,6 +152,15 @@ runtime are reviewed in the same approval. Interactive inputs, outputs, handoffs
 and readiness operations are unsupported in this check policy. Domain SDK checks
 may use a pinned entrypoint with fixed `client.probe-arguments`.
 
+For a write-only HTTP route, the shared
+`runbox.service_probes:agent_vault_http_scope` entrypoint can verify its
+provisioned grant. Supply the exact bundle name, host, method and path prefix
+followed by one or more injected header names. The entrypoint reads the Agent
+Vault session catalog through the existing proxy and checks for one ready HTTP
+service with that scope and exact header names. It issues no request to the
+upstream host. Upstream credential validity requires a separate provider check.
+[Agent Vault session catalog reference](https://infisical.com/docs/api-reference/endpoints/agent-vault-sessions/list-session-services)
+
 An HTTP probe may set a fixed `probe-query` that exactly matches an entry in
 that GET route's `queries`. It changes only the check URL; it does not grant new
 queries or authorize writes. Every probe must test service access rather than

@@ -1,4 +1,4 @@
-"""Fixed, read-only SDK identity probes for reviewed personal service routes."""
+"""Fixed, read-only identity and scope probes for reviewed service routes."""
 
 import base64
 import contextlib
@@ -12,6 +12,14 @@ import tempfile
 from datetime import timedelta
 from pathlib import Path
 from urllib.parse import urlsplit
+from urllib.request import (
+    HTTPRedirectHandler,
+    HTTPSHandler,
+    ProxyHandler,
+    Request,
+    build_opener,
+    proxy_bypass,
+)
 from unittest.mock import patch
 
 from .config import Error, require
@@ -21,6 +29,10 @@ def _session(variable, marker):
     require(
         os.environ.get(variable) == marker, "Expected the reviewed public placeholder"
     )
+    return _native_session()
+
+
+def _native_session():
     require(
         os.environ.get("INFISICAL_AGENT_VAULT_URL") == "https://app.infisical.com",
         "Expected the reviewed native session",
@@ -42,6 +54,85 @@ def _session(variable, marker):
     ca = os.environ.get("SSL_CERT_FILE", "")
     require(Path(ca).is_file(), "Expected the reviewed public CA")
     return proxy, ca
+
+
+class _NoRedirects(HTTPRedirectHandler):
+    def redirect_request(self, *_args, **_kwargs):
+        return None
+
+
+def agent_vault_http_scope():
+    """Verify one exact HTTP grant using Agent Vault's own session catalog."""
+    arguments = sys.argv[1:]
+    require(
+        5 <= len(arguments) <= 20,
+        "Specify the reviewed bundle, host, method, path prefix and injected headers",
+    )
+    bundle, host, method, prefix, *headers = arguments
+    expected_headers = sorted(header.lower() for header in headers)
+    require(
+        re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", bundle)
+        and re.fullmatch(r"[a-z0-9]+(?:[.-][a-z0-9]+)+", host)
+        and len(host) <= 253
+        and method in {"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"}
+        and re.fullmatch(r"/[A-Za-z0-9._~/-]{0,255}", prefix)
+        and all(re.fullmatch(r"[a-z0-9-]{1,64}", header) for header in expected_headers)
+        and len(set(expected_headers)) == len(expected_headers),
+        "Invalid reviewed HTTP scope",
+    )
+    proxy, ca = _native_session()
+    require(
+        not proxy_bypass("app.infisical.com"), "The native proxy must cover its catalog"
+    )
+    try:
+        client = build_opener(
+            ProxyHandler({"https": proxy}),
+            HTTPSHandler(context=ssl.create_default_context(cafile=ca)),
+            _NoRedirects(),
+        )
+        request = Request(
+            "https://app.infisical.com/api/v1/agent-vault/session/services",
+            headers={"Accept": "application/json"},
+        )
+        limit = 128 * 1024
+        with client.open(request, timeout=8) as response:
+            require(response.status == 200, "Agent Vault catalog unavailable")
+            raw = response.read(limit + 1)
+        require(len(raw) <= limit, "Agent Vault catalog exceeds its size limit")
+        inventory = json.loads(raw)
+        services = inventory["services"]
+        require(
+            inventory["session"]["accessBundle"] == bundle
+            and bool(inventory["agentVault"]["proxy"])
+            and type(services) is list
+            and len(services) == 1,
+            "Agent Vault session scope differs from review",
+        )
+        service = services[0]
+        custom_headers = service["customHeaders"]
+        credential = service["credential"]
+        require(
+            type(custom_headers) is list and type(credential["addedByProxy"]) is bool,
+            "Invalid Agent Vault credential metadata",
+        )
+        injected_headers = list(custom_headers)
+        if credential["addedByProxy"]:
+            injected_headers.append(credential["header"])
+        require(
+            service["type"] == "http"
+            and service["hosts"] == [host]
+            and service["status"] == "ready"
+            and service["allowedMethods"] == [method]
+            and service["allowedPathPrefixes"] == [prefix]
+            and all(type(header) is str for header in injected_headers)
+            and sorted(header.lower() for header in injected_headers)
+            == expected_headers,
+            "Agent Vault HTTP grant differs from review",
+        )
+    except (OSError, ValueError, TypeError, KeyError):
+        raise Error(
+            "Agent Vault HTTP scope verification failed; details withheld"
+        ) from None
 
 
 @contextlib.contextmanager
