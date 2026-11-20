@@ -188,6 +188,21 @@ cannot accept forwarded arguments or manage PostgreSQL or transient files.
 exact acknowledged commit and verifies every planned file. The benchmark's
 own snapshot verifier still needs to complete before claiming publication.
 
+The archive's `--imagefolder prepare` command freezes a verified ImageFolder
+export, its expected parent commit and its commit message without opening a
+service session. Pass `--stage` with the absolute export directory, `--parent`
+with the observed commit, and `--message` with the reviewed message. The tool
+leaves a local `export.json` receipt out of the plan.
+
+A compatible Runbox profile can execute `--imagefolder publish` with the exact
+checkout-relative stage path, owner-only plan path and SHA-256 digest. Pin the
+same plan and digest in the `--imagefolder-plan` gateway, declare the dataset as
+`HF_IMAGEFOLDER_REPOSITORY`, and use the fixed loopback destination and public
+Hub placeholder. The client rechecks the staged bytes before contacting the Hub and
+submits one expected-parent commit. Use `--imagefolder check` with an independent
+identity-only gateway for the bounded read-only probe. Upload authorization
+and download-back verification remain part of the consuming workflow.
+
 `inputs` selects only explicit canonical payload arguments before authentication.
 Each named rule declares `argument` (index in the full public argv),
 `when-prefix`, `root`, `exclude` and `allow`. `root: repo` confines payloads to the

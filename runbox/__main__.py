@@ -81,6 +81,10 @@ def main(arguments=None):
         from .python_client import main as python_client
 
         return python_client(args[1:])
+    if args[:1] == ["--imagefolder"]:
+        from .hf_imagefolder import main as imagefolder
+
+        return imagefolder(args[1:])
     if args[:1] == ["--handoff"]:
         from .handoff import main as handoff
 
