@@ -1,5 +1,6 @@
 """Strict, data-only repository configuration. Providers own their options."""
 
+import json
 import re
 import uuid
 from collections import Counter
@@ -563,7 +564,7 @@ def profile(value):
                 "Additional verification must use an existing exact GET route",
             )
     if "probe" in value:
-        probe = fields(value["probe"], ("execution",), ("http",))
+        probe = fields(value["probe"], ("execution",), ("http", "services"))
         selected = probe["execution"]
         require(
             type(selected) is dict
@@ -577,6 +578,12 @@ def profile(value):
             kind == "none" or selected["sandbox"] == "macos-command",
             "Independent probes must retain required OS sandboxing",
         )
+        if "services" in probe:
+            services = fields(probe["services"], ("lock", "processes"))
+            require(
+                "{argument-" not in json.dumps(services),
+                "Independent probe services require fixed arguments",
+            )
         # Validate a complete execution view without inheriting daemon/worker
         # administration. Its live session still uses the original policy.
         profile(

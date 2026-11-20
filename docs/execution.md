@@ -169,10 +169,16 @@ workflow dispatch operation.
 `resources/hf-benchmark-publish.py` freezes the inventory from a verified
 TurboBench staging directory. Use `prepare` with the repository, project,
 version, and observed parent, or `absent` after a verified repository-not-found
-response. Bind the resulting plan hash, stage, and scoped Hub gateway in the
-Runbox profile. `publish` checks the staged bytes and commits against the
-reviewed parent before verifying the version tag. The configured `check`
-only reads account identity. `download-back` runs anonymously against the
+response. Pass the stage path, plan path, and SHA-256 digest as the three
+arguments to `publish`. The Runbox profile confines both paths to the selected
+checkout and supplies the same plan and digest to the scoped Hub gateway.
+`publish` checks the staged bytes, commits against the reviewed parent, and
+verifies the version tag. The configured `check` only reads account identity.
+Use `probe.services` to select a fixed identity gateway for the read-only check
+when the normal gateway requires per-run inputs. A probe service can declare
+fixed local processes with the ordinary service lock and runtime pins, but
+cannot accept forwarded arguments or manage PostgreSQL or transient files.
+`download-back` runs anonymously against the
 exact acknowledged commit and verifies every planned file. The benchmark's
 own snapshot verifier still needs to complete before claiming publication.
 

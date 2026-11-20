@@ -100,6 +100,34 @@ class IndependentProbeTests(unittest.TestCase):
         with self.assertRaises(Error):
             profile(value)
 
+    def test_probe_uses_its_own_fixed_local_service(self):
+        value = selected()
+        value["services"] = {
+            "lock": "{home}/.config/runbox/fixture.lock",
+            "processes": [
+                {
+                    "argv": ["{python}", "{argument-1}"],
+                    "cwd": "/",
+                    "ready": {"ok": True},
+                    "timeout": 3,
+                }
+            ],
+        }
+        probe_services = copy.deepcopy(value["services"])
+        probe_services["processes"][0]["argv"] = ["{python}", "--fixture-identity"]
+        value["probe"]["services"] = probe_services
+        profile(value)
+        self.assertEqual(online_profile(value)["services"], probe_services)
+        self.assertEqual(value["services"]["processes"][0]["argv"][-1], "{argument-1}")
+        for field, setting in (("postgres", {}), ("transient-files", [])):
+            probe_services[field] = setting
+            with self.subTest(field=field), self.assertRaises(Error):
+                profile(value)
+            del probe_services[field]
+        probe_services["processes"][0]["argv"].append("{argument-1}")
+        with self.assertRaisesRegex(Error, "require fixed arguments"):
+            profile(value)
+
     def test_probe_query_requires_exact_primary_get_route(self):
         value = selected()
         http = value["probe"]["http"]

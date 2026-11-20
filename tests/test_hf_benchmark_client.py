@@ -1,10 +1,14 @@
+import base64
+import hashlib
 import importlib.util
 import json
+import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 
 RESOURCE = (
@@ -83,6 +87,33 @@ class BenchmarkClientTests(unittest.TestCase):
         (self.root / "alias").symlink_to(self.root / PAYLOAD)
         with self.assertRaisesRegex(client.PublicationError, "symlink"):
             client.stage_plan(self.root, REPO, PROJECT, VERSION, PARENT)
+
+    def test_publish_checks_the_explicit_plan_digest_before_connecting(self):
+        plan_path = self.root / "plan.json"
+        raw = json.dumps(self.plan).encode()
+        plan_path.write_bytes(raw)
+        payload = base64.urlsafe_b64encode(
+            json.dumps({"root": str(self.root)}).encode()
+        ).decode()
+        with (
+            patch.dict(os.environ, {"RUNBOX_POLICY": payload}),
+            patch.object(
+                sys,
+                "argv",
+                [str(RESOURCE), "publish", "bundles", "plan.json", "0" * 64],
+            ),
+            patch.object(client, "scoped_client") as connect,
+        ):
+            with self.assertRaisesRegex(client.PublicationError, "plan digest differs"):
+                client.main()
+            connect.assert_not_called()
+        self.assertEqual(
+            client.read_json(plan_path, hashlib.sha256(raw).hexdigest()), self.plan
+        )
+        with self.assertRaisesRegex(
+            client.PublicationError, "outside the reviewed checkout"
+        ):
+            client.publication_input(self.root, "../plan.json")
 
     def test_commit_and_tag_use_the_reviewed_parent_and_receipt(self):
         api = Mock()

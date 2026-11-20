@@ -332,8 +332,19 @@ def sdk():
     return huggingface_hub, errors
 
 
-def scoped_client():
-    metadata = json.loads(base64.urlsafe_b64decode(os.environ["RUNBOX_POLICY"]))
+def publication_input(root, value):
+    root = canonical_root(root)
+    selected = root / value
+    require(
+        selected != root
+        and selected.is_relative_to(root)
+        and selected == selected.resolve(),
+        "Benchmark input is outside the reviewed checkout",
+    )
+    return selected
+
+
+def scoped_client(metadata):
     for directory in metadata["runtime"].get("imports", []):
         sys.path.insert(0, directory)
     import httpx2
@@ -387,7 +398,9 @@ def main():
     prepare = commands.add_parser("prepare")
     for field in ("stage", "repository", "project", "version", "parent"):
         prepare.add_argument("--" + field, required=True)
-    commands.add_parser("publish")
+    publisher = commands.add_parser("publish")
+    for field in ("stage", "plan", "plan_sha256"):
+        publisher.add_argument(field)
     commands.add_parser("check")
     verify = commands.add_parser("download-back")
     for field in ("plan", "receipt", "repository", "destination"):
@@ -422,7 +435,14 @@ def main():
             )
         )
         return
-    hub, errors, client = scoped_client()
+    metadata = json.loads(base64.urlsafe_b64decode(os.environ["RUNBOX_POLICY"]))
+    if args.command == "publish":
+        require(SHA256.fullmatch(args.plan_sha256), "Invalid benchmark plan digest")
+        stage = publication_input(metadata["root"], args.stage)
+        plan = read_json(
+            publication_input(metadata["root"], args.plan), args.plan_sha256
+        )
+    hub, errors, client = scoped_client(metadata)
     if args.command == "check":
         identity = client.whoami()
         require(
@@ -442,11 +462,10 @@ def main():
         )
         return
     env = os.environ
-    plan = read_json(Path(env["HF_BENCHMARK_PLAN"]), env["HF_BENCHMARK_PLAN_SHA256"])
     print(
         json.dumps(
             publish(
-                env["HF_BENCHMARK_STAGE"],
+                stage,
                 plan,
                 env["HF_BENCHMARK_REPOSITORY"],
                 env["HF_BENCHMARK_PROJECT"],
