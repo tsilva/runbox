@@ -167,9 +167,15 @@ The fixed reader requires direct, credential-free storage egress and has no
 workflow dispatch operation.
 
 `resources/hf-benchmark-publish.py` freezes the inventory from a verified
-TurboBench staging directory. Use `prepare` with the repository, project,
-version, and observed parent, or `absent` after a verified repository-not-found
-response. Pass the stage path, plan path, and SHA-256 digest as the three
+TurboBench staging directory. A read-only Runbox profile can run
+`inspect-parent` through the fixed benchmark parent gateway. It returns the
+verified public dataset commit or a null parent after a typed repository-not-found
+response. The `check-parent` probe reports only read-only success and a count of
+zero or one. For an existing dataset, `fetch-index` takes that receipt, repository,
+and project and downloads only `benchmark-index.json` anonymously at the pinned
+commit. Use that index to stage the next bundle. Use `prepare` with the repository,
+project, version, and verified parent, or `absent` after confirmed absence.
+Pass the stage path, plan path, and SHA-256 digest as the three
 arguments to `publish`. The Runbox profile confines both paths to the selected
 checkout and supplies the same plan and digest to the scoped Hub gateway.
 `publish` checks the staged bytes, commits against the reviewed parent, and

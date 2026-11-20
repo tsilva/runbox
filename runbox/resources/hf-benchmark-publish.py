@@ -8,6 +8,7 @@ import os
 import re
 import stat
 import sys
+import tempfile
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -318,6 +319,58 @@ def download_back(plan, receipt, repository, destination, client, download):
     return {**receipt, "downloaded_file_count": len(files), "transport_verified": True}
 
 
+def inspect_parent(repository, client, missing_repository):
+    require(REPO.fullmatch(repository), "Invalid reviewed dataset name")
+    try:
+        dataset = client.dataset_info(repository)
+    except missing_repository as error:
+        require(
+            error.response.status_code == 404
+            and error.response.headers.get("x-error-code") == "RepoNotFound",
+            "Repository absence was not verified",
+        )
+        return {"repository": repository, "parent": None}
+    require(
+        dataset.id == repository
+        and dataset.private is False
+        and isinstance(dataset.sha, str)
+        and COMMIT.fullmatch(dataset.sha),
+        "Dataset metadata differs from the reviewed scope",
+    )
+    return {"repository": repository, "parent": dataset.sha}
+
+
+def fetch_index(receipt, repository, project, download):
+    parent = receipt.get("parent")
+    require(
+        set(receipt) == {"repository", "parent"}
+        and REPO.fullmatch(repository)
+        and receipt["repository"] == repository
+        and isinstance(parent, str)
+        and COMMIT.fullmatch(parent),
+        "Expected a verified existing dataset parent",
+    )
+    with tempfile.TemporaryDirectory(prefix="benchmark-index-") as temporary:
+        root = Path(temporary).resolve()
+        download(
+            repository,
+            filename="benchmark-index.json",
+            repo_type="dataset",
+            revision=parent,
+            token=False,
+            endpoint=HUB,
+            local_dir=root,
+        )
+        index = read_json(root / "benchmark-index.json")
+    require(
+        index.get("repo_id") == repository
+        and index.get("schema") == project + ".benchmark-index/v1"
+        and isinstance(index.get("entries"), list),
+        "Index differs from the reviewed dataset or project",
+    )
+    return index
+
+
 def sdk():
     os.environ.update(
         HF_HUB_DISABLE_IMPLICIT_TOKEN="1",
@@ -392,6 +445,19 @@ def scoped_client(metadata):
     return hub, errors, hub.HfApi(endpoint=env["HF_ENDPOINT"], token=MARKER)
 
 
+def report_probe(item_count):
+    print(
+        json.dumps(
+            {
+                "ok": True,
+                "read_only": True,
+                "credential_mode": "public-placeholder",
+                "item_count": item_count,
+            }
+        )
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -402,6 +468,11 @@ def main():
     for field in ("stage", "plan", "plan_sha256"):
         publisher.add_argument(field)
     commands.add_parser("check")
+    commands.add_parser("check-parent")
+    commands.add_parser("inspect-parent")
+    index = commands.add_parser("fetch-index")
+    for field in ("parent-receipt", "repository", "project"):
+        index.add_argument("--" + field, required=True)
     verify = commands.add_parser("download-back")
     for field in ("plan", "receipt", "repository", "destination"):
         verify.add_argument("--" + field, required=True)
@@ -435,6 +506,24 @@ def main():
             )
         )
         return
+    if args.command == "fetch-index":
+        import httpx2
+
+        hub, _ = sdk()
+        hub.set_client_factory(
+            lambda: httpx2.Client(trust_env=False, follow_redirects=True, timeout=20)
+        )
+        print(
+            json.dumps(
+                fetch_index(
+                    read_json(Path(args.parent_receipt)),
+                    args.repository,
+                    args.project,
+                    hub.hf_hub_download,
+                )
+            )
+        )
+        return
     metadata = json.loads(base64.urlsafe_b64decode(os.environ["RUNBOX_POLICY"]))
     if args.command == "publish":
         require(SHA256.fullmatch(args.plan_sha256), "Invalid benchmark plan digest")
@@ -443,6 +532,17 @@ def main():
             publication_input(metadata["root"], args.plan), args.plan_sha256
         )
     hub, errors, client = scoped_client(metadata)
+    if args.command in ("check-parent", "inspect-parent"):
+        parent = inspect_parent(
+            os.environ["HF_BENCHMARK_REPOSITORY"],
+            client,
+            errors.RepositoryNotFoundError,
+        )
+        if args.command == "check-parent":
+            report_probe(int(parent["parent"] is not None))
+        else:
+            print(json.dumps(parent))
+        return
     if args.command == "check":
         identity = client.whoami()
         require(
@@ -450,16 +550,7 @@ def main():
             and identity.get("type") == "user",
             "Hugging Face account identity differs from the approved publisher",
         )
-        print(
-            json.dumps(
-                {
-                    "ok": True,
-                    "read_only": True,
-                    "credential_mode": "public-placeholder",
-                    "item_count": 1,
-                }
-            )
-        )
+        report_probe(1)
         return
     env = os.environ
     print(

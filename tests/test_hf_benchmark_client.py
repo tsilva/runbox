@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 
 RESOURCE = (
@@ -150,6 +150,50 @@ class BenchmarkClientTests(unittest.TestCase):
             )
         api.create_repo.assert_not_called()
 
+    def test_inspection_reads_only_the_reviewed_public_parent_or_typed_absence(self):
+        api = Mock()
+        api.dataset_info.side_effect = [
+            SimpleNamespace(id=REPO, private=False, sha=PARENT),
+            Missing("RepoNotFound"),
+            Missing("RevisionNotFound"),
+            SimpleNamespace(id=REPO, private=True, sha=PARENT),
+        ]
+        self.assertEqual(
+            client.inspect_parent(REPO, api, Missing),
+            {"repository": REPO, "parent": PARENT},
+        )
+        self.assertIsNone(client.inspect_parent(REPO, api, Missing)["parent"])
+        with self.assertRaisesRegex(
+            client.PublicationError, "absence was not verified"
+        ):
+            client.inspect_parent(REPO, api, Missing)
+        with self.assertRaisesRegex(client.PublicationError, "reviewed scope"):
+            client.inspect_parent(REPO, api, Missing)
+        self.assertEqual(api.dataset_info.call_args_list, [call(REPO)] * 4)
+        api.create_repo.assert_not_called()
+
+    def test_index_download_pins_the_observed_commit_and_never_uses_credentials(self):
+        contents = json.loads((self.root / "benchmark-index.json").read_bytes())
+
+        def download(repository, **options):
+            self.assertEqual(repository, REPO)
+            self.assertEqual(options["filename"], "benchmark-index.json")
+            self.assertEqual(options["revision"], PARENT)
+            self.assertIs(options["token"], False)
+            (options["local_dir"] / options["filename"]).write_text(
+                json.dumps(contents)
+            )
+
+        receipt = {"repository": REPO, "parent": PARENT}
+        self.assertEqual(client.fetch_index(receipt, REPO, PROJECT, download), contents)
+        contents["repo_id"] = "another/repository"
+        with self.assertRaisesRegex(client.PublicationError, "reviewed dataset"):
+            client.fetch_index(receipt, REPO, PROJECT, download)
+        unavailable = Mock()
+        with self.assertRaisesRegex(client.PublicationError, "existing dataset parent"):
+            client.fetch_index({**receipt, "parent": None}, REPO, PROJECT, unavailable)
+        unavailable.assert_not_called()
+
     def test_public_download_pins_the_commit_disables_authentication_and_verifies_bytes(
         self,
     ):
@@ -173,8 +217,8 @@ class BenchmarkClientTests(unittest.TestCase):
         self.assertTrue(proof["transport_verified"])
         self.assertEqual(proof["downloaded_file_count"], 3)
         self.assertEqual(api.dataset_info.call_count, 2)
-        for call in api.dataset_info.call_args_list:
-            self.assertIs(call.kwargs["token"], False)
+        for invocation in api.dataset_info.call_args_list:
+            self.assertIs(invocation.kwargs["token"], False)
 
     def test_foreign_tag_and_receipt_extras_cannot_authorize_public_download(self):
         destination = Path(self.enterContext(tempfile.TemporaryDirectory())).resolve()
