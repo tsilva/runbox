@@ -1,6 +1,6 @@
 import copy
 import unittest
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 from runbox.config import Error, profile, query_matches
 from runbox.guard import Guard, PolicyError
@@ -79,3 +79,55 @@ class QueryParameterTests(unittest.TestCase):
         self.assertTrue(query_matches(route, "a=1&b=2"))
         self.assertFalse(query_matches(route, "b=2&a=1"))
         self.assertFalse(query_matches(route, "a=1&b=2&c=3"))
+
+    def post_policy(self):
+        value = selected()
+        value.update(value.pop("probe"))
+        value["execution"]["client"]["script"] = "src/example/cli.py"
+        http = value["http"]
+        http["routes"].append(
+            {
+                "method": "POST",
+                "path": urlsplit(http["base-url"]).path + "/runsync",
+                "queries": ["wait=10000"],
+            }
+        )
+        return value
+
+    def test_sandboxed_python_script_allows_only_the_literal_post_query(self):
+        value = self.post_policy()
+        profile(value)
+        http = value["http"]
+        guard = Guard(http)
+        headers = {"Authorization": "Bearer " + http["placeholder"]}
+        target = http["base-url"] + "/runsync"
+        exact = target + "?wait=10000"
+        self.assertEqual(guard.validate("POST", exact, headers), exact)
+        for query in ("", "wait=9999", "wait=10000&wait=10000", "wait=%310000"):
+            with self.subTest(query=query), self.assertRaises(PolicyError):
+                guard.validate("POST", target + "?" + query, headers)
+        with self.assertRaises(PolicyError):
+            guard.validate("GET", exact, headers)
+
+    def test_post_queries_require_one_literal_pair_and_a_pinned_script(self):
+        original = self.post_policy()
+        for queries in (["wait=1", "wait=10000"], ["wait=1&other=2"], ["wait="], ["wait=%31"]):
+            value = copy.deepcopy(original)
+            value["http"]["routes"][-1]["queries"] = queries
+            with self.subTest(queries=queries), self.assertRaises(Error):
+                profile(value)
+        for mutation in ("PUT", "none", "no-script", "untracked-script", "http-json"):
+            value = copy.deepcopy(original)
+            execution = value["execution"]
+            if mutation == "PUT":
+                value["http"]["routes"][-1]["method"] = "PUT"
+            elif mutation == "none":
+                execution["sandbox"] = "none"
+            elif mutation == "no-script":
+                del execution["client"]["script"]
+            elif mutation == "untracked-script":
+                execution["integrity"]["files"] = []
+            else:
+                execution["client"] = {"type": "http-json"}
+            with self.subTest(mutation=mutation), self.assertRaises(Error):
+                profile(value)

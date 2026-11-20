@@ -508,10 +508,20 @@ def profile(value):
                 type(queries) is list
                 and queries
                 and all(isinstance(q, str) and len(q) < 256 for q in queries)
-                and len(set(queries)) == len(queries)
-                and (queries == [""] or route["method"] == "GET"),
+                and len(set(queries)) == len(queries),
                 "Invalid exact query allowlist",
             )
+            if queries != [""] and route["method"] != "GET":
+                client = execution.get("client", {})
+                require(
+                    route["method"] == "POST"
+                    and kind == "macos-command"
+                    and client.get("type") == "python"
+                    and "script" in client
+                    and len(queries) == 1
+                    and re.fullmatch(r"[A-Za-z0-9_.~-]+=[A-Za-z0-9_.~-]+", queries[0]),
+                    "POST queries require one literal pair and a sandboxed Python script",
+                )
             pair = (route_origin, route["method"], route["path"])
             require(pair not in pairs, "Duplicate HTTP route")
             pairs.add(pair)

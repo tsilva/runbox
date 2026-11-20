@@ -137,8 +137,12 @@ an integer `max-count` from 1 to 16; every repeated value must match its pattern
 Unknown names, malformed encoding, control characters,
 more than 32 fields, queries over 4096 characters and values over 2048 characters
 are rejected. Keep patterns narrow to the selected operation and account. The
-fixed `probe-query` must satisfy the same schema. Other methods and client types
-retain exact query lists; existing route semantics are unchanged.
+fixed `probe-query` must satisfy the same schema.
+
+A `macos-command` Python client with an integrity-pinned `script` may declare one
+literal `name=value` pair in a POST route's `queries` list. Each side must contain
+only letters, digits, `.`, `_`, `~` or `-`. The guard requires the exact query,
+for example `queries: ["wait=10000"]`. Use a separate GET route for the online check.
 
 Shared Node resources support guarded HTTP clients, Sentry readers and Next app
 startup. `execution.preloads` lists pinned domain transport modules; generic
