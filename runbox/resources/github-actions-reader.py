@@ -41,7 +41,7 @@ def certificate_context(path):
 
 class Reader:
     def __init__(self, environment):
-        policy = json.loads(environment["RUNBOX_GITHUB_ACTIONS_POLICY"])
+        policy = json.loads(environment["GITHUB_ACTIONS_READER_POLICY"])
         self.repository = policy["repository"]
         self.repository_id = policy["repository_id"]
         self.workflows = policy["workflows"]

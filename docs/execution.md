@@ -156,7 +156,7 @@ arguments. The reader uses only the project keys and exact event GETs, and
 prints only the verified receipt fields or probe status.
 
 `resources/github-actions-reader.py` supports GitHub CLI-shaped read operations
-for runtime receipts. Configure `RUNBOX_GITHUB_ACTIONS_POLICY` with the repository
+for runtime receipts. Configure `GITHUB_ACTIONS_READER_POLICY` with the repository
 name and numeric ID, approved workflow names and IDs, allowed artifact names, and
 exact signed-storage hosts. The approved `GH_TOKEN` placeholder goes only to
 GitHub through Agent Vault. The reader follows one HTTPS archive redirect using

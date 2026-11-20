@@ -165,7 +165,7 @@ class GitHubActionsReaderTests(unittest.TestCase):
                 "GH_TOKEN": reader_module.PLACEHOLDER,
                 "SSL_CERT_FILE": str(ca),
                 "GITHUB_ACTIONS_ARCHIVE_CA": str(ca),
-                "RUNBOX_GITHUB_ACTIONS_POLICY": json.dumps(
+                "GITHUB_ACTIONS_READER_POLICY": json.dumps(
                     {
                         "repository": REPOSITORY,
                         "repository_id": 22,
@@ -310,7 +310,7 @@ class GitHubActionsReaderTests(unittest.TestCase):
     def test_cli_errors_are_sanitized(self):
         outcome = subprocess.run(
             [sys.executable, "-I", "-S", "-B", str(SOURCE), "repo", "view"],
-            env={"RUNBOX_GITHUB_ACTIONS_POLICY": "{synthetic-secret"},
+            env={"GITHUB_ACTIONS_READER_POLICY": "{synthetic-secret"},
             capture_output=True,
             check=False,
             timeout=3,
