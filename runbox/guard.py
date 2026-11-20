@@ -43,6 +43,7 @@ class Guard:
         self.policy = policy
         self.failed = False
         self.report_probe_decision = report_probe_decision
+        self.probe_request_number = None
 
     def validate(self, method, url, headers):
         if self.failed:
@@ -148,8 +149,13 @@ class Guard:
                     ):
                         decision = "; Agent Vault decision " + values[0]
                     exc.close()
+                stage = (
+                    f"; Python probe request {guard.probe_request_number}"
+                    if guard.report_probe_decision and guard.probe_request_number is not None
+                    else ""
+                )
                 raise PolicyError(
-                    "Service request failed" + status + decision + "; details withheld"
+                    "Service request failed" + status + decision + stage + "; details withheld"
                 ) from None
 
         def no_redirect(*_args, **_kwargs):

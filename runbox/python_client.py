@@ -48,7 +48,8 @@ def main(arguments):
     # integrity files included in the runtime snapshot.
     sys.path[:0] = runtime.get("imports", [])
     if "http" in profile:
-        Guard(profile["http"], report_probe_decision=payload["mode"] == "probe").install()
+        guard = Guard(profile["http"], report_probe_decision=payload["mode"] == "probe")
+        guard.install()
     if client["type"] == "s3-head":
         from .s3_probe import execute
 
@@ -66,6 +67,9 @@ def main(arguments):
     )
     if identity:
         http = profile["http"]
+        additional = http.get("additional-probes", [])
+        if additional:
+            guard.probe_request_number = 1
         base = urllib.parse.urlsplit(http["base-url"])
         target = urllib.parse.urlunsplit(
             (base.scheme, base.netloc, http["probe"], http.get("probe-query", ""), "")
@@ -85,7 +89,8 @@ def main(arguments):
                     "Verification response exceeds size limit",
                 )
                 result = response_result(json.loads(raw), client["probe"])
-        for path in http.get("additional-probes", []):
+        for number, path in enumerate(additional, start=2):
+            guard.probe_request_number = number
             target = urllib.parse.urlunsplit((base.scheme, base.netloc, path, "", ""))
             with urllib.request.urlopen(
                 urllib.request.Request(

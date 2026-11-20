@@ -137,7 +137,9 @@ Missing releases or failed checks never trigger another credential route.
 read-only probe. Built-in HTTP probes support model catalogs, explicit JSON
 identity/status assertions or status-only GETs that discard bodies. Optional
 `http.additional-probes` are existing exact GET routes whose bodies are also
-discarded. Other reviewed clients can provide a fixed `probe-argv`; their code
+discarded. A built-in Python command probe can report which request failed by
+number. The primary GET is request 1, followed by the additional GETs in their
+declared order. Other reviewed clients can provide a fixed `probe-argv`. Their code
 and runtime must remain pinned. Successful output contains only the safe result
 schema, with optional model/item counts, never provider bodies or capabilities.
 

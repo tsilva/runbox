@@ -54,6 +54,10 @@ class RunnerTests(unittest.TestCase):
             probe_failure(b"", b"Runbox client failed (startup); private diagnostics withheld."),
             "Online check failed at Node client startup; provider diagnostics withheld",
         )
+        self.assertEqual(
+            probe_failure(b"", b"runbox: Service request failed; Python probe request 17; details withheld"),
+            "Online check failed at Python read-only request 17; provider diagnostics withheld",
+        )
         for stdout, stderr in (
             (b'{"ok":false,"stage":"private-secret"}', b""),
             (b'{"ok":false,"stage":[]}', b""),
@@ -74,6 +78,8 @@ class RunnerTests(unittest.TestCase):
             b"Runbox client failed (catalog/HTTP200); private diagnostics withheld.",
             b"Runbox client failed (catalog/HTTP503/secret); private diagnostics withheld.",
             b"Runbox client failed (catalog/HTTP403/vault-secret); private diagnostics withheld.",
+            b"runbox: Service request failed (HTTP 502); Python probe request 18; details withheld",
+            b"runbox: Service request failed (HTTP 502); Python probe request secret; details withheld",
         ):
             self.assertEqual(probe_failure(b"", line), unknown)
 

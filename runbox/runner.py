@@ -85,13 +85,16 @@ def probe_failure(stdout, stderr):
             if s3[2] in FAILURE_STAGES:
                 return f"Online check failed at S3 {s3[2]} (HTTP {s3[1]}); provider diagnostics withheld"
         status = re.fullmatch(
-            r"runbox: Service request failed \(HTTP ([1-5][0-9]{2})\)"
-            r"(; Agent Vault decision (?:blocked|brokered|passthrough|error))?; details withheld",
+            r"runbox: Service request failed(?: \(HTTP ([1-5][0-9]{2})\)"
+            r"(; Agent Vault decision (?:blocked|brokered|passthrough|error))?)?"
+            r"(?:; Python probe request ([1-9]|1[0-7]))?; details withheld",
             line,
         )
-        if status:
+        if status and (status[1] or status[3]):
+            stage = f" at Python read-only request {status[3]}" if status[3] else ""
+            details = f" (HTTP {status[1]})" if status[1] else ""
             return (
-                f"Online check failed (HTTP {status[1]})"
+                f"Online check failed{stage}{details}"
                 f"{status[2] or ''}; provider diagnostics withheld"
             )
     return "Online check failed; renew login or review the route; provider diagnostics withheld"

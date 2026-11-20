@@ -51,6 +51,10 @@ class ResponseTests(unittest.TestCase):
 
             def do_GET(self):
                 self.server.requests.append(self.path)
+                if len(self.server.requests) < self.server.failure_step:
+                    self.send_response(204)
+                    self.end_headers()
+                    return
                 body = b"synthetic-private-provider-body"
                 self.send_response(502)
                 for value in self.server.decisions:
@@ -72,20 +76,23 @@ class ResponseTests(unittest.TestCase):
                     "type": "python",
                     "probe": {"checks": [], "format": "status"},
                 }
-                for entry, decisions, expected, mode in (
-                    (
-                        "--command-child",
-                        ["brokered"],
-                        "; Agent Vault decision brokered",
-                        "probe",
-                    ),
-                    ("--command-child", ["synthetic-private-header"], "", "probe"),
-                    ("--command-child", ["blocked", "brokered"], "", "probe"),
-                    ("--command-child", ["brokered"], "", "run"),
-                    ("--child", ["blocked"], "; Agent Vault decision blocked", "probe"),
+                for entry, decisions, decision, mode, count, failure_step in (
+                    ("--command-child", ["brokered"], "brokered", "probe", 1, 1),
+                    ("--command-child", ["synthetic-private-header"], None, "probe", 1, 1),
+                    ("--command-child", ["blocked", "brokered"], None, "probe", 1, 1),
+                    ("--command-child", ["brokered"], None, "run", 1, 1),
+                    ("--child", ["blocked"], "blocked", "probe", 1, 1),
+                    ("--command-child", [], None, "probe", 3, 1),
+                    ("--command-child", [], None, "probe", 3, 2),
+                    ("--command-child", ["brokered"], "brokered", "probe", 3, 3),
+                    ("--command-child", ["brokered"], None, "run", 3, 3),
                 ):
-                    with self.subTest(entry=entry, decisions=decisions, mode=mode):
+                    with self.subTest(entry=entry, decisions=decisions, mode=mode, step=failure_step):
                         server.decisions, server.requests = decisions, []
+                        server.failure_step = failure_step
+                        paths = ["/api/v1/models", "/api/v1/private-path", "/api/v1/provider"][:count]
+                        profile["http"]["additional-probes"] = paths[1:]
+                        profile["http"]["routes"] = [{"method": "GET", "path": path} for path in paths]
                         payload = {
                             "profile": profile,
                             "runtime": {"ca-file": "/dev/null"},
@@ -116,12 +123,20 @@ class ResponseTests(unittest.TestCase):
                         self.assertEqual(result.returncode, 1)
                         self.assertEqual(result.stdout, b"")
                         self.assertNotIn(b"synthetic-private", result.stderr)
+                        self.assertNotIn(b"private-path", result.stderr)
+                        stage = (
+                            f" at Python read-only request {failure_step}"
+                            if count > 1 and mode == "probe"
+                            else ""
+                        )
+                        label = f"; Agent Vault decision {decision}" if decision else ""
                         self.assertEqual(
                             probe_failure(result.stdout, result.stderr),
-                            f"Online check failed (HTTP 502){expected}; provider diagnostics withheld",
+                            f"Online check failed{stage} (HTTP 502){label}; provider diagnostics withheld",
                         )
+                        origin = profile["http"]["base-url"].removesuffix("/api/v1")
                         self.assertEqual(
-                            server.requests, [profile["http"]["base-url"] + "/models"]
+                            server.requests, [origin + path for path in paths[:failure_step]]
                         )
             finally:
                 server.shutdown()
