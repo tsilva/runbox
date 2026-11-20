@@ -100,7 +100,7 @@ def main(payload, arguments):
         )
         os.execvpe(arguments[0], arguments, os.environ)
     policy = profile["http"]
-    Guard(policy).install()
+    Guard(policy, report_probe_decision=payload["mode"] == "probe").install()
     if payload["mode"] == "probe":
         base = urllib.parse.urlsplit(policy["base-url"])
         request = urllib.request.Request(

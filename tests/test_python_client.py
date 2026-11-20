@@ -72,13 +72,19 @@ class ResponseTests(unittest.TestCase):
                     "type": "python",
                     "probe": {"checks": [], "format": "status"},
                 }
-                for decisions, expected, mode in (
-                    (["brokered"], "; Agent Vault decision brokered", "probe"),
-                    (["synthetic-private-header"], "", "probe"),
-                    (["blocked", "brokered"], "", "probe"),
-                    (["brokered"], "", "run"),
+                for entry, decisions, expected, mode in (
+                    (
+                        "--command-child",
+                        ["brokered"],
+                        "; Agent Vault decision brokered",
+                        "probe",
+                    ),
+                    ("--command-child", ["synthetic-private-header"], "", "probe"),
+                    ("--command-child", ["blocked", "brokered"], "", "probe"),
+                    ("--command-child", ["brokered"], "", "run"),
+                    ("--child", ["blocked"], "; Agent Vault decision blocked", "probe"),
                 ):
-                    with self.subTest(decisions=decisions, mode=mode):
+                    with self.subTest(entry=entry, decisions=decisions, mode=mode):
                         server.decisions, server.requests = decisions, []
                         payload = {
                             "profile": profile,
@@ -89,17 +95,21 @@ class ResponseTests(unittest.TestCase):
                         session = (
                             f"http://fixture:capability@{profile['session']['proxy']}"
                         )
+                        encoded = base64.urlsafe_b64encode(
+                            json.dumps(payload).encode()
+                        ).decode()
+                        argv = [sys.executable, "-B", "-m", "runbox", entry]
+                        if entry == "--child":
+                            argv.append(encoded)
                         result = subprocess.run(
-                            [sys.executable, "-B", "-m", "runbox", "--command-child"],
+                            argv,
                             cwd=Path(__file__).resolve().parents[1],
                             timeout=10,
                             capture_output=True,
                             env={
                                 "HTTP_PROXY": session,
                                 "HTTPS_PROXY": session,
-                                "RUNBOX_POLICY": base64.urlsafe_b64encode(
-                                    json.dumps(payload).encode()
-                                ).decode(),
+                                "RUNBOX_POLICY": encoded,
                                 **profile["environment"],
                             },
                         )
