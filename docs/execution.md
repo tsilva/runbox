@@ -166,6 +166,16 @@ against GitHub's metadata. Choose a current receipt ID for the `check` probe.
 The fixed reader requires direct, credential-free storage egress and has no
 workflow dispatch operation.
 
+`resources/hf-benchmark-publish.py` freezes the inventory from a verified
+TurboBench staging directory. Use `prepare` with the repository, project,
+version, and observed parent, or `absent` after a verified repository-not-found
+response. Bind the resulting plan hash, stage, and scoped Hub gateway in the
+Runbox profile. `publish` checks the staged bytes and commits against the
+reviewed parent before verifying the version tag. The configured `check`
+only reads account identity. `download-back` runs anonymously against the
+exact acknowledged commit and verifies every planned file. The benchmark's
+own snapshot verifier still needs to complete before claiming publication.
+
 `inputs` selects only explicit canonical payload arguments before authentication.
 Each named rule declares `argument` (index in the full public argv),
 `when-prefix`, `root`, `exclude` and `allow`. `root: repo` confines payloads to the
