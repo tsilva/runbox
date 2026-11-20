@@ -20,11 +20,15 @@ def build(output):
     }
     files["licenses/Runbox-LICENSE"] = (ROOT / "LICENSE").read_bytes()
     resources = {}
-    for path in sorted((ROOT / "runbox/resources").rglob("*")):
+    resource_root = ROOT / "runbox/resources"
+    for path in sorted(resource_root.rglob("*")):
         if path.is_symlink():
             raise SystemExit("Shared resources must not contain symlinks")
+        relative = path.relative_to(resource_root)
+        if "__pycache__" in relative.parts or path.suffix in (".pyc", ".pyo"):
+            continue
         if path.is_file():
-            name = str(path.relative_to(ROOT / "runbox/resources"))
+            name = relative.as_posix()
             resources["resources/" + name] = path.read_bytes()
             files["runbox/resources/" + name] = path.read_bytes()
     for package in (ROOT / "runbox", Path(yaml.__file__).parent):
