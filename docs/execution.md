@@ -148,6 +148,17 @@ and an owned temporary tsconfig. Existing domain adapters can retain their own
 transport checks or compose the shared HTTP guard. Multi-service apps need their
 complete reviewed routes; a single-provider HTTP guard is not a universal proxy.
 
+`resources/github-actions-reader.py` supports GitHub CLI-shaped read operations
+for runtime receipts. Configure `RUNBOX_GITHUB_ACTIONS_POLICY` with the repository
+name and numeric ID, approved workflow names and IDs, allowed artifact names, and
+exact signed-storage hosts. The approved `GH_TOKEN` placeholder goes only to
+GitHub through Agent Vault. The reader follows one HTTPS archive redirect using
+the separate pinned `GITHUB_ACTIONS_ARCHIVE_CA` and sends no proxy or GitHub
+authorization on that connection. It verifies the archive size and SHA-256
+against GitHub's metadata. Choose a current receipt ID for the `check` probe.
+The fixed reader requires direct, credential-free storage egress and has no
+workflow dispatch operation.
+
 `inputs` selects only explicit canonical payload arguments before authentication.
 Each named rule declares `argument` (index in the full public argv),
 `when-prefix`, `root`, `exclude` and `allow`. `root: repo` confines payloads to the
