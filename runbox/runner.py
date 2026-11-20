@@ -60,6 +60,18 @@ def probe_failure(stdout, stderr):
                     + "; provider diagnostics withheld"
                 )
     for line in stderr.decode(errors="replace").splitlines():
+        node = re.fullmatch(
+            r"Runbox client failed \((startup|catalog|additional-probe)(?:/HTTP([3-5][0-9]{2}))?\); private diagnostics withheld\.",
+            line,
+        )
+        if node:
+            location = {
+                "startup": "Node client startup",
+                "catalog": "model catalog",
+                "additional-probe": "additional read-only request",
+            }[node[1]]
+            status = f" (HTTP {node[2]})" if node[2] else ""
+            return f"Online check failed at {location}{status}; provider diagnostics withheld"
         s3 = re.fullmatch(
             r"runbox: Service request failed \(HTTP ([1-5][0-9]{2}); S3 stage ([a-z-]+)\); details withheld",
             line,

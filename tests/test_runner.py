@@ -38,6 +38,18 @@ class RunnerTests(unittest.TestCase):
             probe_failure(b"", b"runbox: Service request failed (HTTP 502; S3 stage upstream-tls); details withheld"),
             "Online check failed at S3 upstream-tls (HTTP 502); provider diagnostics withheld",
         )
+        self.assertEqual(
+            probe_failure(b"", b"Runbox client failed (additional-probe/HTTP503); private diagnostics withheld.\n"),
+            "Online check failed at additional read-only request (HTTP 503); provider diagnostics withheld",
+        )
+        self.assertEqual(
+            probe_failure(b"", b"Runbox client failed (catalog); private diagnostics withheld."),
+            "Online check failed at model catalog; provider diagnostics withheld",
+        )
+        self.assertEqual(
+            probe_failure(b"", b"Runbox client failed (startup); private diagnostics withheld."),
+            "Online check failed at Node client startup; provider diagnostics withheld",
+        )
         for stdout, stderr in (
             (b'{"ok":false,"stage":"private-secret"}', b""),
             (b'{"ok":false,"stage":[]}', b""),
@@ -51,6 +63,14 @@ class RunnerTests(unittest.TestCase):
             ),
         ):
             self.assertNotIn("secret", probe_failure(stdout, stderr))
+        unknown = probe_failure(b"", b"")
+        for line in (
+            b"Runbox client failed (additional-probe/HTTP503); private diagnostics withheld. secret",
+            b"Runbox client failed (secret/HTTP503); private diagnostics withheld.",
+            b"Runbox client failed (catalog/HTTP200); private diagnostics withheld.",
+            b"Runbox client failed (catalog/HTTP503/secret); private diagnostics withheld.",
+        ):
+            self.assertEqual(probe_failure(b"", line), unknown)
 
     def test_reviewed_login_and_mcp_suppression_are_explicit_native_flags(self):
         selected = {
