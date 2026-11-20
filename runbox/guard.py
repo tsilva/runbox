@@ -2,6 +2,7 @@
 
 import os
 import re
+import urllib.error
 import urllib.parse
 import urllib.request
 import zlib
@@ -38,9 +39,10 @@ def decoded_response(content, metadata, limit=64 * 1024 * 1024):
 
 
 class Guard:
-    def __init__(self, policy):
+    def __init__(self, policy, *, report_probe_decision=False):
         self.policy = policy
         self.failed = False
+        self.report_probe_decision = report_probe_decision
 
     def validate(self, method, url, headers):
         if self.failed:
@@ -136,8 +138,18 @@ class Guard:
                     if type(code) is int and 400 <= code <= 599
                     else ""
                 )
+                decision = ""
+                if guard.report_probe_decision and status and isinstance(
+                    exc, urllib.error.HTTPError
+                ):
+                    values = exc.headers.get_all("X-Agent-Vault-Decision", []) if exc.headers else []
+                    if len(values) == 1 and values[0] in (
+                        "blocked", "brokered", "passthrough", "error"
+                    ):
+                        decision = "; Agent Vault decision " + values[0]
+                    exc.close()
                 raise PolicyError(
-                    "Service request failed" + status + "; details withheld"
+                    "Service request failed" + status + decision + "; details withheld"
                 ) from None
 
         def no_redirect(*_args, **_kwargs):

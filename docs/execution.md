@@ -253,9 +253,9 @@ verification. Mutable readiness state is not a credential store or source pin.
 `stderr: discard` suppresses private diagnostics for compatible fixed commands.
 Protocol clients retain their specific framing and sanitization requirements.
 Failed Node checks can report the exact failure stage for client startup,
-model catalog, or a follow-up read-only request. The message includes the HTTP
-status and a recognized Agent Vault decision when available. Response bodies,
-service names and provider error text stay private.
+model catalog, or a follow-up read-only request. Node and guarded `urllib`
+checks can report the HTTP status and a recognized Agent Vault decision.
+Response bodies, service names and provider error text stay private.
 
 An existing managed SSH master can serve an approved `session.tunnel`. Runbox
 checks it and creates or cancels only its own forwarding. It does not authenticate

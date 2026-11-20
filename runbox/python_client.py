@@ -48,7 +48,7 @@ def main(arguments):
     # integrity files included in the runtime snapshot.
     sys.path[:0] = runtime.get("imports", [])
     if "http" in profile:
-        Guard(profile["http"]).install()
+        Guard(profile["http"], report_probe_decision=payload["mode"] == "probe").install()
     if client["type"] == "s3-head":
         from .s3_probe import execute
 
