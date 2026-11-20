@@ -43,6 +43,10 @@ class RunnerTests(unittest.TestCase):
             "Online check failed at additional read-only request (HTTP 503); provider diagnostics withheld",
         )
         self.assertEqual(
+            probe_failure(b"", b"Runbox client failed (additional-probe/HTTP403/vault-blocked); private diagnostics withheld.\n"),
+            "Online check failed at additional read-only request (HTTP 403); Agent Vault decision blocked; provider diagnostics withheld",
+        )
+        self.assertEqual(
             probe_failure(b"", b"Runbox client failed (catalog); private diagnostics withheld."),
             "Online check failed at model catalog; provider diagnostics withheld",
         )
@@ -69,6 +73,7 @@ class RunnerTests(unittest.TestCase):
             b"Runbox client failed (secret/HTTP503); private diagnostics withheld.",
             b"Runbox client failed (catalog/HTTP200); private diagnostics withheld.",
             b"Runbox client failed (catalog/HTTP503/secret); private diagnostics withheld.",
+            b"Runbox client failed (catalog/HTTP403/vault-secret); private diagnostics withheld.",
         ):
             self.assertEqual(probe_failure(b"", line), unknown)
 

@@ -77,6 +77,21 @@ test('sanitizes service failures without an automatic retry', async () => {
   assert.equal(calls, 1);
 });
 
+test('probe failures retain only a known Agent Vault decision', async () => {
+  for (const [mode, decision, expected] of [
+    ['probe', 'blocked', 'blocked'], ['probe', 'brokered', 'brokered'],
+    ['probe', 'synthetic-private-header', null], ['run', 'blocked', null],
+  ]) {
+    const fetch = guardedFetch(async () => new Response('synthetic-private-body', {
+      status: 403, headers: { 'X-Agent-Vault-Decision': decision, 'X-Agent-Vault-Service': 'synthetic-private-service' },
+    }), { ...value, mode });
+    const response = await fetch(`${env.AGENTBRIDGE_BASE_URL}/models`, { headers: { Authorization: `Bearer ${env.AGENTBRIDGE_API_KEY}` } });
+    assert.equal(response.headers.get('X-Agent-Vault-Decision'), expected);
+    assert.equal(response.headers.get('X-Agent-Vault-Service'), null);
+    assert.doesNotMatch(await response.text(), /synthetic-private/);
+  }
+});
+
 test('a failed network request blocks every later dispatch in that session', async () => {
   let calls = 0;
   const fetch = guardedFetch(async () => { calls++; throw new Error('synthetic-private-network-detail'); }, value);

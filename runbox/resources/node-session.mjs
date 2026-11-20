@@ -85,9 +85,16 @@ export function guardedFetch(fetchImpl, value = validateSession()) {
     }
     if (!response.ok) {
       failed = true;
+      const safeHeaders = { 'Content-Type': 'application/json' };
+      if (value.mode === 'probe') {
+        const decision = response.headers.get('X-Agent-Vault-Decision');
+        if (['blocked', 'brokered', 'passthrough', 'error'].includes(decision)) {
+          safeHeaders['X-Agent-Vault-Decision'] = decision;
+        }
+      }
       await response.body?.cancel();
       return new Response(JSON.stringify({ error: { message: 'Service request failed; provider details withheld.' } }),
-        { status: response.status, headers: { 'Content-Type': 'application/json' } });
+        { status: response.status, headers: safeHeaders });
     }
     return response;
   };

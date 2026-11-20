@@ -9,6 +9,7 @@ let stage = 'startup';
 function probeFailure(response) {
   const error = new Error('Read-only probe failed.');
   error.httpStatus = response.status;
+  error.vaultDecision = response.headers.get('X-Agent-Vault-Decision');
   return error;
 }
 
@@ -82,8 +83,10 @@ main().catch(error => {
   const codes = new Set(['EPERM', 'EACCES', 'ENOENT', 'ERR_MODULE_NOT_FOUND', 'ERR_ACCESS_DENIED', 'EADDRINUSE',
     'ERR_TLS_CERT_ALTNAME_INVALID', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE', 'ENOTFOUND', 'ECONNREFUSED', 'ETIMEDOUT']);
   const operations = new Set(['open', 'scandir', 'realpath', 'listen', 'bind', 'connect', 'read', 'write', 'stat']);
+  const decision = ['blocked', 'brokered', 'passthrough', 'error'].includes(error?.vaultDecision) ? `vault-${error.vaultDecision}` : '';
   const diagnostic = [stage, codes.has(error?.code) ? error.code : '', operations.has(error?.syscall) ? error.syscall : '',
-    Number.isInteger(error?.httpStatus) && error.httpStatus >= 100 && error.httpStatus <= 599 ? `HTTP${error.httpStatus}` : ''].filter(Boolean).join('/');
+    Number.isInteger(error?.httpStatus) && error.httpStatus >= 100 && error.httpStatus <= 599 ? `HTTP${error.httpStatus}` : '',
+    decision].filter(Boolean).join('/');
   console.error(`Runbox client failed${diagnostic ? ` (${diagnostic})` : ''}; private diagnostics withheld.`);
   process.exitCode = 1;
 });
