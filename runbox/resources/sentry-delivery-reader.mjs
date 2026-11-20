@@ -25,7 +25,7 @@ function binding({ organization, project, site, eventId, release, dsnHash }) {
   'Invalid Sentry receipt binding');
 }
 
-async function readJson(path, transport) {
+async function readJson(path, stage, transport) {
   const response = await transport(api + path, {
     method: 'GET', redirect: 'error', signal: AbortSignal.timeout(15000),
     headers: { Accept: 'application/json', Authorization: `Bearer ${marker}` },
@@ -34,7 +34,7 @@ async function readJson(path, transport) {
     await response.body?.cancel();
     const status = Number.isInteger(response.status) && response.status >= 400 && response.status <= 599
       ? ` (HTTP ${response.status})` : '';
-    throw new DeliveryError('Sentry receipt request failed' + status);
+    throw new DeliveryError(`Sentry ${stage} request failed${status}`);
   }
   requireMatch(response.body, 'Sentry receipt response was empty');
   const reader = response.body.getReader();
@@ -61,12 +61,12 @@ export async function readReceipt(policy, transport = fetch) {
   binding(policy);
   const { organization, project, site, eventId, release, dsnHash } = policy;
   const projectPath = `/api/0/projects/${organization}/${project}`;
-  const keys = await readJson(`${projectPath}/keys/`, transport);
+  const keys = await readJson(`${projectPath}/keys/`, 'project keys', transport);
   requireMatch(Array.isArray(keys) && keys.some(key => key?.isActive === true &&
     typeof key.dsn?.public === 'string' && createHash('sha256').update(key.dsn.public).digest('hex') === dsnHash),
   'The deployed public DSN did not match an active Sentry key');
 
-  const event = await readJson(`${projectPath}/events/${eventId}/`, transport);
+  const event = await readJson(`${projectPath}/events/${eventId}/`, 'event', transport);
   const tags = Object.fromEntries((event.tags ?? []).map(tag => [tag.key, tag.value]));
   const url = event.entries?.find(entry => entry.type === 'request')?.data?.url ?? tags.url;
   const received = Date.parse(event.dateCreated);

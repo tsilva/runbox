@@ -244,7 +244,7 @@ raise SystemExit(subprocess.run(args[args.index('--')+1:], env=env).returncode)
             str(repo),
         ]
 
-        def run(*arguments, success=True):
+        def run(*arguments, success=True, failure=None):
             result = subprocess.run(
                 command + list(arguments),
                 cwd=repo,
@@ -257,6 +257,8 @@ raise SystemExit(subprocess.run(args[args.index('--')+1:], env=env).returncode)
                 result.returncode == 0, success, result.stdout + result.stderr
             )
             self.assertNotIn("fixture-private", result.stdout + result.stderr)
+            if failure is not None:
+                self.assertIn(failure, result.stderr)
             return result.stdout
 
         run("approve", "--runtime", str(runtime))
@@ -281,17 +283,25 @@ raise SystemExit(subprocess.run(args[args.index('--')+1:], env=env).returncode)
         count = len(requests)
         run("run", "--", "sentry-delivery", "--event-id", "anything", success=False)
         self.assertEqual(len(requests), count)
-        for scenario, value, expected_calls in (
-            ("active", False, 1),
-            ("brokered", False, 1),
-            ("oversized", True, 1),
-            ("event_status", 404, 2),
-            ("site", "https://foreign.example.invalid", 2),
+        for scenario, value, expected_calls, failure in (
+            ("active", False, 1, "did not match an active Sentry key"),
+            ("brokered", False, 1, "Sentry project keys request failed"),
+            ("oversized", True, 1, "exceeded the size limit"),
+            ("event_status", 404, 2, "Sentry event request failed (HTTP 404)"),
+            (
+                "site",
+                "https://foreign.example.invalid",
+                2,
+                "did not match the reviewed event",
+            ),
         ):
             with self.subTest(scenario=scenario):
                 old = cases[scenario]
                 cases[scenario] = value
                 count = len(requests)
-                self.assertEqual(run("run", "--", "sentry-delivery", success=False), "")
+                self.assertEqual(
+                    run("run", "--", "sentry-delivery", success=False, failure=failure),
+                    "",
+                )
                 self.assertEqual(len(requests) - count, expected_calls)
                 cases[scenario] = old
