@@ -16,6 +16,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from enum import Enum
 from urllib.parse import unquote, urlsplit
 from uuid import UUID
 
@@ -24,6 +25,20 @@ from .output import safe_output
 
 HEADER_LIMIT = 8192
 BUFFER_LIMIT = 65536
+
+
+class RenewalStage(Enum):
+    APPROVAL = "approval verification"
+    CREATE = "lease creation"
+    VALIDATE = "lease validation"
+    PROBE = "read-only verification"
+    ROTATE = "lease rotation"
+
+
+class RenewalFailure(Error):
+    def __init__(self, stage):
+        self.stage = stage
+        super().__init__(f"Proxy renewal failed during {stage.value}. New connections are disabled.")
 
 
 def _seconds(value):
@@ -133,13 +148,13 @@ class Supervisor:
             remaining = min(remaining, lease.wall_deadline - self.wall_clock())
         return remaining
 
-    def _fail(self):
+    def _fail(self, stage):
         with self.lock:
             first = not self.failed
             self.failed = True
         if first and self.on_failure and not self.closed.is_set():
             try:
-                self.on_failure()
+                self.on_failure(stage)
             except Exception:
                 pass
 
@@ -200,18 +215,20 @@ class Supervisor:
                     if not self.closed.is_set() and not invalid:
                         self.current = candidate
                 if invalid:
-                    self._fail()
+                    self._fail(RenewalStage.VALIDATE)
                 self._retire(all_owned=self.closed.is_set())
+            except RenewalFailure as exc:
+                self._fail(exc.stage)
             except Exception:
                 # No automatic auth retries and no reuse of the previous lease for new work.
-                self._fail()
+                self._fail(RenewalStage.ROTATE)
 
     def acquire(self):
         if self.check:
             try:
                 self.check()
             except Exception:
-                self._fail()
+                self._fail(RenewalStage.APPROVAL)
                 return None
         with self.lock:
             lease = self.current
@@ -504,23 +521,28 @@ def execute_renewing(root, name, profile, runtime, archive, arguments):
     provider = PROVIDERS[profile["provider"]["type"]]
 
     def guard():
-        require(not cancelled.is_set(), "Renewal cancelled")
-        config = load(root / ".runbox.yaml")
-        require(
-            config.get("profiles", {}).get(name) == captured,
-            "Approved renewal profile changed",
-        )
-        require(
-            verified(root, name, captured, archive) == runtime,
-            "Approved renewal runtime changed",
-        )
+        try:
+            require(not cancelled.is_set(), "Renewal cancelled")
+            config = load(root / ".runbox.yaml")
+            require(
+                config.get("profiles", {}).get(name) == captured,
+                "Approved renewal profile changed",
+            )
+            require(
+                verified(root, name, captured, archive) == runtime,
+                "Approved renewal runtime changed",
+            )
+        except Exception:
+            raise RenewalFailure(RenewalStage.APPROVAL) from None
 
     def mint():
         guard()
         beginning, wall = time.monotonic(), time.time()
-        lease = provider.create_lease(captured, runtime)
+        stage = RenewalStage.CREATE
         identifier = None
         try:
+            lease = provider.create_lease(captured, runtime)
+            stage = RenewalStage.VALIDATE
             candidate_id = lease["id"]
             require(
                 str(UUID(candidate_id)) == candidate_id,
@@ -538,6 +560,7 @@ def execute_renewing(root, name, profile, runtime, archive, arguments):
             proxy = provider.proxy_url(captured, lease)
             host, port = captured["session"]["proxy"].rsplit(":", 1)
             _proxy_authorization(proxy, (host, int(port)))
+            stage = RenewalStage.PROBE
             probe, cwd = command(
                 root,
                 online_profile(captured),
@@ -560,12 +583,13 @@ def execute_renewing(root, name, profile, runtime, archive, arguments):
                 "Renewed session probe failed",
             )
             guard()
+            stage = RenewalStage.VALIDATE
             require(
                 deadline > time.monotonic() and wall_deadline > time.time(),
                 "Renewed session expired during verification",
             )
             return Lease(identifier, proxy, deadline, wall_deadline=wall_deadline)
-        except BaseException:
+        except BaseException as exc:
             if identifier:
                 try:
                     provider.revoke_lease(captured, runtime, identifier)
@@ -575,15 +599,17 @@ def execute_renewing(root, name, profile, runtime, archive, arguments):
                         file=sys.stderr,
                         flush=True,
                     )
-            raise Error("Session renewal failed; new access is disabled") from None
+            if isinstance(exc, RenewalFailure):
+                raise
+            raise RenewalFailure(stage) from None
 
     supervisor = Supervisor(
         mint,
         lambda identifier: provider.revoke_lease(captured, runtime, identifier),
         _seconds(profile["session"]["renewal"]["renew-before"]),
         check=guard,
-        on_failure=lambda: print(
-            "Proxy renewal or approval verification failed; new connections are disabled",
+        on_failure=lambda stage: print(
+            str(RenewalFailure(stage)),
             file=sys.stderr,
             flush=True,
         ),

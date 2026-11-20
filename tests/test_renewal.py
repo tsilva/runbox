@@ -18,6 +18,8 @@ from runbox.config import Error
 from runbox.renewal import (
     ConnectRelay,
     Lease,
+    RenewalFailure,
+    RenewalStage,
     Supervisor,
     _lease_deadline,
     execute_renewing,
@@ -178,6 +180,22 @@ class NativeProxy:
 
 
 class RenewalTests(unittest.TestCase):
+    def test_background_renewal_reports_first_failure_once(self):
+        clock = Clock()
+        failures = []
+        lease = Lease("synthetic", "unused", deadline=10)
+        factory = unittest.mock.Mock(side_effect=[lease, RenewalFailure(RenewalStage.CREATE)])
+        supervisor = Supervisor(
+            factory, lambda _id: None, 3, clock=clock, on_failure=failures.append
+        ).start()
+        self.addCleanup(supervisor.close)
+        clock.now = 8
+        wait_for(lambda: bool(failures))
+        supervisor.check = unittest.mock.Mock(side_effect=ValueError("agv_private"))
+        self.assertIsNone(supervisor.acquire())
+        self.assertEqual(failures, [RenewalStage.CREATE])
+        self.assertEqual(factory.call_count, 2)
+
     def test_system_sleep_triggers_renewal_without_monotonic_progress(self):
         monotonic, wall, issued, revoked = Clock(), Clock(), [], []
         wall.now = 1000
@@ -365,7 +383,7 @@ class RenewalTests(unittest.TestCase):
         proxy, _, supervisor, relay, issued, _ = self.setup_relay()
         old, _ = self.connect(relay)
         events = []
-        supervisor.on_failure = lambda: events.append("safe failure notice")
+        supervisor.on_failure = events.append
 
         def changed():
             raise Error("Synthetic approval changed")
@@ -375,7 +393,7 @@ class RenewalTests(unittest.TestCase):
         self.assertIn(b" 503 ", status)
         self.assertTrue(supervisor.failed)
         self.connect(relay)
-        self.assertEqual(events, ["safe failure notice"])
+        self.assertEqual(events, [RenewalStage.APPROVAL])
         old.sendall(b"existing-request")
         self.assertEqual(old.recv(32), b"existing-request")
         self.assertEqual(len(issued), 1)
@@ -647,7 +665,28 @@ class RenewalTests(unittest.TestCase):
                 ["example-daemon"],
             )
         self.assertNotIn(session["token"], str(caught.exception))
+        self.assertIn("approval verification", str(caught.exception))
         provider.revoke_lease.assert_called_once_with(candidate, runtime, session["id"])
+        popen.assert_not_called()
+
+    def test_failed_native_creation_reports_only_the_stage(self):
+        candidate = profile()
+        provider = unittest.mock.Mock()
+        provider.create_lease.side_effect = RuntimeError("agv_synthetic-provider-detail")
+        with (
+            patch("runbox.renewal.load", return_value={"profiles": {"daemon": candidate}}),
+            patch("runbox.trust.verified", return_value={}),
+            patch("runbox.providers.PROVIDERS", {"infisical": provider}),
+            patch("runbox.renewal.subprocess.Popen") as popen,
+            self.assertRaisesRegex(
+                Error, r"^Proxy renewal failed during lease creation\. New connections are disabled\.$"
+            ),
+        ):
+            execute_renewing(
+                Path("/synthetic"), "daemon", candidate, {},
+                Path("/synthetic/release.pyz"), ["example-daemon"],
+            )
+        provider.revoke_lease.assert_not_called()
         popen.assert_not_called()
 
     def test_failed_probe_and_revocation_report_only_fixed_cleanup_warning(self):
@@ -695,6 +734,7 @@ class RenewalTests(unittest.TestCase):
             "Session cleanup could not be verified; finite expiry still applies\n",
         )
         self.assertNotIn("agv_", str(caught.exception))
+        self.assertIn("read-only verification", str(caught.exception))
         provider.revoke_lease.assert_called_once_with(candidate, runtime, session["id"])
         popen.assert_not_called()
 

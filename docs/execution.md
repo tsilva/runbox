@@ -243,6 +243,9 @@ probe validates the new capability and native CA fingerprint. Approval drift or
 renewal failure closes new admissions without restarting the app; existing
 tunnels drain within their original lifetime. Recovery requires explicit review
 and a new invocation. Startup port checks run only before starting the daemon.
+Renewal failures report the failed stage, such as approval verification, lease
+creation or the read-only probe. Runbox withholds provider diagnostics and
+session details.
 
 Capabilities stay in memory and scoped child environments. Output is sanitized.
 Idle retired leases and all invocation-owned leases on shutdown are revoked;
