@@ -148,6 +148,13 @@ and an owned temporary tsconfig. Existing domain adapters can retain their own
 transport checks or compose the shared HTTP guard. Multi-service apps need their
 complete reviewed routes; a single-provider HTTP guard is not a universal proxy.
 
+`resources/sentry-delivery-reader.mjs` checks a previously captured production
+event through an existing project read grant. Pin the organization, project,
+site origin, event ID, release and SHA-256 of the deployed public DSN in the
+profile. Both `read` and `check` are fixed commands without caller-supplied
+arguments. The reader uses only the project keys and exact event GETs, and
+prints only the verified receipt fields or probe status.
+
 `resources/github-actions-reader.py` supports GitHub CLI-shaped read operations
 for runtime receipts. Configure `RUNBOX_GITHUB_ACTIONS_POLICY` with the repository
 name and numeric ID, approved workflow names and IDs, allowed artifact names, and
